@@ -1,0 +1,26 @@
+node_modules/
+*.tsbuildinfo
+
+# Local configuration and credentials never enter this repository.
+.env
+.env.*
+*.key
+*.pem
+auth.json
+credentials.json
+cycle-local/
+
+# Scratch and debug output.
+tmp/
+.tmp/
+coverage/
+*.log
+
+# Packaged artifacts.
+build/
+
+# Editor and OS noise.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "cycle",
+  "owner": {
+    "name": "Gianluca Iannotta",
+    "url": "https://github.com/jannotix"
+  },
+  "metadata": {
+    "description": "Evidence-gated delivery for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "cycle",
+      "source": "./",
+      "category": "development",
+      "description": "Five separated roles and an arbiter that judges against your original request. A candidate ships only when the gates that prove it actually ran."
+    }
+  ]
+}

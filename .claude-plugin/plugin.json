@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "cycle",
+  "displayName": "Cycle",
+  "version": "1.0.0",
+  "description": "Evidence-gated delivery: an architect, an executor, two independent reviewers and an independent arbiter that judges against your original request.",
+  "author": {
+    "name": "Gianluca Iannotta",
+    "url": "https://github.com/jannotix"
+  },
+  "homepage": "https://github.com/jannotix/claude-code-cycle-plugin",
+  "repository": "https://github.com/jannotix/claude-code-cycle-plugin",
+  "license": "FSL-1.1-MIT",
+  "keywords": [
+    "code-review",
+    "verification",
+    "quality-gates",
+    "multi-agent",
+    "delivery"
+  ],
+  "agents": "./agents/",
+  "workflows": "./workflows/",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "architect_model": {
+      "type": "string",
+      "title": "Architect model",
+      "description": "Model for planning and task decomposition. Use inherit to follow the session model.",
+      "default": "inherit"
+    },
+    "executor_model": {
+      "type": "string",
+      "title": "Executor model",
+      "description": "Model for implementation. This role performs the most tool calls, so prefer a model with reliable tool use.",
+      "default": "inherit"
+    },
+    "functional_reviewer_model": {
+      "type": "string",
+      "title": "Functional reviewer model",
+      "description": "Model for the completeness and behaviour review. Independence improves when this differs from the security reviewer and the arbiter.",
+      "default": "inherit"
+    },
+    "security_reviewer_model": {
+      "type": "string",
+      "title": "Security reviewer model",
+      "description": "Model for the security and architecture review.",
+      "default": "inherit"
+    },
+    "arbiter_model": {
+      "type": "string",
+      "title": "Arbiter model",
+      "description": "Model for the final verdict. Correlating this with the architect weakens the boundary it exists to enforce.",
+      "default": "inherit"
+    },
+    "operator_model": {
+      "type": "string",
+      "title": "Operator model",
+      "description": "Model for deterministic control-plane calls. A small fast model is sufficient.",
+      "default": "haiku"
+    },
+    "architect_effort": {
+      "type": "string",
+      "title": "Architect effort",
+      "description": "low, medium, high, xhigh or max.",
+      "default": "high"
+    },
+    "executor_effort": {
+      "type": "string",
+      "title": "Executor effort",
+      "description": "low, medium, high, xhigh or max.",
+      "default": "high"
+    },
+    "reviewer_effort": {
+      "type": "string",
+      "title": "Reviewer effort",
+      "description": "Applies to both independent reviewers. low, medium, high, xhigh or max.",
+      "default": "high"
+    },
+    "arbiter_effort": {
+      "type": "string",
+      "title": "Arbiter effort",
+      "description": "low, medium, high, xhigh or max.",
+      "default": "high"
+    },
+    "max_repair_cycles": {
+      "type": "number",
+      "title": "Repair cycles",
+      "description": "Rejected candidates repaired before the workflow blocks. The blocked state preserves all work and can be resumed.",
+      "default": 5,
+      "min": 1,
+      "max": 20
+    },
+    "gate_strictness": {
+      "type": "string",
+      "title": "Gate strictness",
+      "description": "standard fails a change whose layer has no proof. strict also fails on skipped gates. advisory downgrades missing gates to warnings.",
+      "default": "standard"
+    },
+    "data_dir": {
+      "type": "directory",
+      "title": "Data directory",
+      "description": "Where workflow state, history, memory and the code index are stored. Leave empty to use the plugin data directory."
+    }
+  }
+}
