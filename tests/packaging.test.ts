@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { mkdir, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -122,9 +122,14 @@ test("the plugin manifest version matches the package version", async () => {
   assert.equal(manifest.version, source.version)
 })
 
-// A zip only this writer can read would be worse than no zip at all.
+/**
+ * A zip only this writer can read would be worse than no zip at all, so the archive is opened by
+ * libarchive rather than by anything in this repository. GNU tar cannot read zip; bsdtar can, and
+ * ships in System32 on Windows.
+ */
 test("the archive is readable by a tool that did not write it", async (t) => {
-  if (process.platform !== "win32") return t.skip("uses PowerShell Expand-Archive")
+  const reader = bsdtar()
+  if (reader === null) return t.skip("bsdtar (libarchive) is not available on this machine")
 
   const paths = (await artifact).slice(0, 40)
   const entries = await readEntries(paths)
@@ -133,21 +138,57 @@ test("the archive is readable by a tool that did not write it", async (t) => {
   const work = mkdtempSync(join(tmpdir(), "cycle-zip-"))
   try {
     const zipPath = join(work, "a.zip")
+    const out = join(work, "out")
     writeFileSync(zipPath, archive)
-    execFileSync(
-      "powershell",
-      ["-NoProfile", "-Command", `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${join(work, "out")}' -Force`],
-      { stdio: ["ignore", "ignore", "ignore"], timeout: 60_000 },
-    )
+    mkdirSync(out, { recursive: true })
+    execFileSync(reader, ["-xf", zipPath, "-C", out], {
+      stdio: ["ignore", "ignore", "pipe"],
+      timeout: 60_000,
+    })
+
+    const listed = execFileSync(reader, ["-tf", zipPath], { encoding: "utf8", timeout: 60_000 })
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+    assert.deepEqual(listed.sort(), [...paths].sort())
 
     for (const path of paths) {
-      const extracted = await readFile(join(work, "out", path))
+      const extracted = await readFile(join(out, path))
       const original = entries.find((entry: { path: string }) => entry.path === path)
       assert.deepEqual(extracted, original.data, path)
     }
   } finally {
     rmSync(work, { force: true, recursive: true })
   }
+})
+
+function bsdtar(): string | null {
+  const candidates =
+    process.platform === "win32"
+      ? [join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "tar.exe")]
+      : ["/usr/bin/bsdtar", "/usr/local/bin/bsdtar", "bsdtar"]
+
+  for (const candidate of candidates) {
+    try {
+      const version = execFileSync(candidate, ["--version"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 10_000,
+      })
+      if (version.includes("bsdtar") || version.includes("libarchive")) return candidate
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null
+}
+
+// The reversed polynomial was wrong once, and lenient readers accepted the result. A known answer
+// catches that without needing an external tool.
+test("the archive checksum matches the CRC-32 known answer", () => {
+  const archive = createZip([{ data: Buffer.from("123456789"), path: "a" }]) as Buffer
+
+  assert.equal(archive.readUInt32LE(14), 0xcb_f4_39_26)
 })
 
 test("an empty file and a file that deflates larger both round trip", async () => {

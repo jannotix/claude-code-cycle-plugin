@@ -5,12 +5,16 @@ import { deflateRawSync } from "node:zlib"
  * that property: Node's zlib supplies deflate, and the container format is a few headers.
  */
 
+// The reversed CRC-32 polynomial. Getting a digit wrong here produces an archive that lenient
+// readers accept and strict ones reject, which is why the round-trip test uses libarchive.
+const CRC32_POLYNOMIAL = 0xed_b8_83_20
+
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256)
   for (let index = 0; index < 256; index += 1) {
     let value = index
     for (let bit = 0; bit < 8; bit += 1) {
-      value = value & 1 ? 0xed_88_83_20 ^ (value >>> 1) : value >>> 1
+      value = value & 1 ? CRC32_POLYNOMIAL ^ (value >>> 1) : value >>> 1
     }
     table[index] = value >>> 0
   }
