@@ -18,10 +18,6 @@
     "multi-agent",
     "delivery"
   ],
-  "workflows": "./workflows/",
-  "skills": "./skills/",
-  "hooks": "./hooks/hooks.json",
-  "mcpServers": "./.mcp.json",
   "userConfig": {
     "architect_model": {
       "type": "string",
