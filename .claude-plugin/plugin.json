@@ -18,7 +18,6 @@
     "multi-agent",
     "delivery"
   ],
-  "agents": "./agents/",
   "workflows": "./workflows/",
   "skills": "./skills/",
   "hooks": "./hooks/hooks.json",
