@@ -10,10 +10,19 @@ test("an explicit data directory wins over every fallback", () => {
   assert.equal(resolved, "/explicit")
 })
 
-test("the plugin data directory is used when no directory is configured", () => {
-  const resolved = resolveDataDirectory(undefined, { CLAUDE_PLUGIN_DATA: "/plugin" }, "linux")
+/**
+ * Verified against the host: `claude plugin uninstall` removes the plugin's data directory whole.
+ * That is correct for a cache and fatal for a signed history of delivered work, so the host's
+ * directory is ignored even when it is offered.
+ */
+test("the host's plugin data directory is refused, because uninstalling removes it", () => {
+  const resolved = resolveDataDirectory(
+    undefined,
+    { CLAUDE_PLUGIN_DATA: "/plugin", XDG_DATA_HOME: "/home/a/.local/share" },
+    "linux",
+  )
 
-  assert.equal(resolved, "/plugin/cycle")
+  assert.equal(resolved, "/home/a/.local/share/cycle")
 })
 
 // Certification 1.11.

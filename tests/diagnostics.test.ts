@@ -26,7 +26,7 @@ function isolated(options: Record<string, string> = {}, extra: NodeJS.ProcessEnv
 
   const environment: NodeJS.ProcessEnv = {
     CLAUDE_CONFIG_DIR: config,
-    CLAUDE_PLUGIN_DATA: data,
+    CLAUDE_PLUGIN_OPTION_DATA_DIR: data,
     CLAUDE_PROJECT_DIR: project,
     ...Object.fromEntries(
       Object.entries(options).map(([key, value]) => [`CLAUDE_PLUGIN_OPTION_${key}`, value]),

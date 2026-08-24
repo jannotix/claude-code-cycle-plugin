@@ -11,8 +11,15 @@ export class PathError extends Error {
 }
 
 /**
- * Durable state never lives inside the Claude Code installation, so an application update
- * cannot destroy workflow state, history, memory or the index.
+ * Durable state never lives anywhere the application manages, so neither an update nor an uninstall
+ * can destroy workflow state, history, memory or the index.
+ *
+ * `CLAUDE_PLUGIN_DATA` is deliberately not used. The host removes that directory when the plugin is
+ * uninstalled, which is right for a plugin's cache and wrong for a signed, append-only record of a
+ * project's delivered work: uninstalling would silently destroy the history the product exists to
+ * keep. The per-platform locations below outlive both the plugin and the application, and section
+ * 1.9's promise is that the user removes this directory deliberately, never that something else
+ * removes it for them.
  */
 export function resolveDataDirectory(
   configured: string | undefined,
@@ -22,9 +29,6 @@ export function resolveDataDirectory(
   if (configured) return configured
 
   const path = platform === "win32" ? win32 : posix
-
-  const provided = environment["CLAUDE_PLUGIN_DATA"]
-  if (provided) return path.join(provided, PRODUCT_DIRECTORY)
 
   if (platform === "win32") {
     const base = environment["LOCALAPPDATA"]

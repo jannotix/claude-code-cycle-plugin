@@ -186,6 +186,25 @@ reading the machine is left to recover rather than immediately refilled.
 Indexing is background work and verification is not: a candidate waiting on its gates gets the
 machine, and the index continues from exactly where it stopped.
 
+## Where the record is kept
+
+Everything durable — workflow state, the signed history, memory and the code index — lives in one
+directory outside anything the application manages:
+
+| Platform | Location |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\Cycle` |
+| macOS | `~/Library/Application Support/Cycle` |
+| Linux | `$XDG_DATA_HOME/cycle`, or `~/.local/share/cycle` |
+
+Deliberately not the plugin's own data directory, which the host removes when a plugin is
+uninstalled. A history of delivered work should outlive the tool that wrote it, so uninstalling Cycle
+leaves the record intact and reinstalling reads it back. Removing it is yours to do, and doing so
+removes everything Cycle knows about the project — there is no second copy.
+
+`/cycle:doctor` prints the path in use. Set **Data directory** in the plugin configuration to put it
+somewhere else.
+
 ## Requirements
 
 - Claude Code

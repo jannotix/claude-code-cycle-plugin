@@ -26,10 +26,11 @@ export async function exchange(
   requests: readonly unknown[],
   { dataDirectory = isolatedDataDirectory(), options = {} }: ExchangeOptions = {},
 ): Promise<Response[]> {
-  const environment: NodeJS.ProcessEnv = { ...process.env, CLAUDE_PLUGIN_DATA: dataDirectory }
+  const environment: NodeJS.ProcessEnv = { ...process.env }
   for (const key of Object.keys(environment)) {
     if (key.startsWith("CLAUDE_PLUGIN_OPTION_")) delete environment[key]
   }
+  environment["CLAUDE_PLUGIN_OPTION_DATA_DIR"] = dataDirectory
   for (const [key, value] of Object.entries(options)) {
     environment[`CLAUDE_PLUGIN_OPTION_${key}`] = value
   }

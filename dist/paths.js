@@ -11,9 +11,6 @@ export function resolveDataDirectory(configured, environment = process.env, plat
     if (configured)
         return configured;
     const path = platform === "win32" ? win32 : posix;
-    const provided = environment["CLAUDE_PLUGIN_DATA"];
-    if (provided)
-        return path.join(provided, PRODUCT_DIRECTORY);
     if (platform === "win32") {
         const base = environment["LOCALAPPDATA"];
         if (!base)

@@ -157,7 +157,7 @@ test("a tampered history is reported on every workflow answer", async () => {
     { dataDirectory },
   )
 
-  const database = new Database({ path: join(dataDirectory, "cycle", "cycle.db") })
+  const database = new Database({ path: join(dataDirectory, "cycle.db") })
   database.run("drop trigger history_is_append_only_update")
   database.run("update history set event = ? where sequence = 0", '{"action":"forged"}')
   database.close()
