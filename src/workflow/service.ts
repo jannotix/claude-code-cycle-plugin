@@ -558,7 +558,14 @@ export function verifyCandidate(
  */
 export function candidateEvidence(context: ServiceContext, workflowId: string): unknown {
   const workflow = load(context, workflowId)
-  if (workflow.candidateId === null) return { candidate: null, evidence: [] }
+  // The requirement identifiers a verdict is allowed to cite. A reviewer is asked to decide every
+  // requirement in the plan and a verdict citing an identifier the plan does not contain is
+  // refused, so the plan's own identifiers are handed out with the evidence rather than left to be
+  // guessed. A quick-route workflow has no plan and therefore no matrix: the list is empty and the
+  // arbiter judges the original request directly.
+  const requirements = loadPlan(context.database, workflowId)?.requirements.map((entry) => entry.id) ?? []
+
+  if (workflow.candidateId === null) return { candidate: null, evidence: [], requirements }
   return {
     candidate: workflow.candidateId,
     evidence: loadEvidence(context.database, workflow.candidateId).map((item) => ({
@@ -568,6 +575,7 @@ export function candidateEvidence(context: ServiceContext, workflowId: string): 
       reason: item.skipReason,
       status: item.status,
     })),
+    requirements,
   }
 }
 

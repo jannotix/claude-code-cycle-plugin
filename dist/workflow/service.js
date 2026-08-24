@@ -333,8 +333,9 @@ export function verifyCandidate(context, workflowId, outcome, now = Date.now()) 
 }
 export function candidateEvidence(context, workflowId) {
     const workflow = load(context, workflowId);
+    const requirements = loadPlan(context.database, workflowId)?.requirements.map((entry) => entry.id) ?? [];
     if (workflow.candidateId === null)
-        return { candidate: null, evidence: [] };
+        return { candidate: null, evidence: [], requirements };
     return {
         candidate: workflow.candidateId,
         evidence: loadEvidence(context.database, workflow.candidateId).map((item) => ({
@@ -344,6 +345,7 @@ export function candidateEvidence(context, workflowId) {
             reason: item.skipReason,
             status: item.status,
         })),
+        requirements,
     };
 }
 export function verificationInputs(context, workflowId) {
