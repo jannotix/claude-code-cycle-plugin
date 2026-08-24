@@ -422,6 +422,9 @@ export async function reconcile(
     delivery: deliveryOf(context.database, workflow.id) ?? null,
     found: true,
     next: NEXT_ACTION[current.state],
+    // Carried so that continuing a run does not require the user to retype the request the arbiter
+    // will judge it against. Retyping it is how a requirement gets silently rewritten.
+    originalRequest: loadRequest(context.database, workflow.id)?.originalText ?? null,
     pausedBecause: pausedBecause(context, current),
     recovered,
     repair: { max: current.maxRepairCycles, used: current.repairCycles },

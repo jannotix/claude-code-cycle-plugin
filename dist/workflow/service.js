@@ -252,6 +252,7 @@ export async function reconcile(context, root, workflowId, now = Date.now()) {
         delivery: deliveryOf(context.database, workflow.id) ?? null,
         found: true,
         next: NEXT_ACTION[current.state],
+        originalRequest: loadRequest(context.database, workflow.id)?.originalText ?? null,
         pausedBecause: pausedBecause(context, current),
         recovered,
         repair: { max: current.maxRepairCycles, used: current.repairCycles },
