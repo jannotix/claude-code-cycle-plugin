@@ -78,7 +78,10 @@ async function relayed(make, attempts) {
   return null
 }
 
-function control(instruction, phaseName) {
+// Set once the workflow exists. Until then there is nothing to confirm a reply against.
+let confirmable = null
+
+function relayCall(instruction, phaseName) {
   return relayed(() => agent(
     `Call ${CONTROL} exactly once with these arguments and return its result verbatim as JSON:\n${instruction}`,
     {
@@ -90,6 +93,24 @@ function control(instruction, phaseName) {
       ...(models.operator ? { model: models.operator } : {}),
     },
   ), retryable(instruction) ? 2 : 1)
+}
+
+/**
+ * A mutating call's own reply passes through a model on its way back, and a model drops fields,
+ * invents values and re-encodes payloads. What stage the workflow is in is therefore read from the
+ * control plane rather than believed from the reply: `status` is authoritative, cheap and safe to
+ * repeat. A reply that was lost entirely is recovered this way when the call in fact succeeded, and
+ * still reads as a stage that has not moved when it did not.
+ */
+async function control(instruction, phaseName) {
+  const answer = await relayCall(instruction, phaseName)
+  if (retryable(instruction) || confirmable === null) return answer
+
+  const confirmed = await relayCall(
+    `{"operation":"status","workflowId":${JSON.stringify(confirmable)}}`,
+    phaseName,
+  )
+  return typeof confirmed?.state === 'string' ? { ...(answer ?? {}), state: confirmed.state } : answer
 }
 
 // `admit` takes a lease. Asking twice would take two.
@@ -224,6 +245,7 @@ const started = await control(
 if (!started?.workflowId) return { error: 'the workflow could not be started', started }
 
 const id = started.workflowId
+confirmable = id
 const full = started.mode === 'full'
 log(`workflow ${id} · ${started.mode} route`)
 
