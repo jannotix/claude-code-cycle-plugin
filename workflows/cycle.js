@@ -47,8 +47,39 @@ const preference = args?.preference ?? 'auto'
 
 // The script cannot reach the control plane directly, so a cheap operator agent makes each call and
 // returns the result verbatim. It never judges anything.
+//
+// It is also the least reliable part of the run: a model relaying exact JSON drops fields, invents
+// states, double-encodes payloads and loops. Every caller below tests for the state it wants, so a
+// missing answer reads as not verified, not approved and not delivered — the run stops or repairs
+// rather than proceeding on a gap. What was missing is that a failed relay arrived as an exception
+// instead of as a missing answer, which killed the run before any of that handling could read it.
+//
+// Only these are sent twice. A mutating call whose reply was lost has still been applied, and the
+// plane correctly refuses the repeat — which turns a recoverable relay hiccup into an aborted run,
+// the exact failure this is here to prevent. `start` is on the list because it is idempotent by
+// construction: it rejoins the workflow already open for the same request rather than making a
+// second one. The others read and change nothing.
+const RETRYABLE = new Set(['start', 'status', 'recall'])
+
+function retryable(instruction) {
+  const found = /"operation":"([a-z_]+)"/.exec(instruction)
+  return found !== null && RETRYABLE.has(found[1])
+}
+
+async function relayed(make, attempts) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const answer = await make()
+      if (answer) return answer
+    } catch {
+      // Reported as no answer once the attempts are spent.
+    }
+  }
+  return null
+}
+
 function control(instruction, phaseName) {
-  return agent(
+  return relayed(() => agent(
     `Call ${CONTROL} exactly once with these arguments and return its result verbatim as JSON:\n${instruction}`,
     {
       agentType: 'cycle:operator',
@@ -58,11 +89,12 @@ function control(instruction, phaseName) {
       schema: STATE,
       ...(models.operator ? { model: models.operator } : {}),
     },
-  )
+  ), retryable(instruction) ? 2 : 1)
 }
 
+// `admit` takes a lease. Asking twice would take two.
 function governor(instruction, phaseName) {
-  return agent(
+  return relayed(() => agent(
     `Call ${GOVERNOR} exactly once with these arguments and return its result verbatim as JSON:\n${instruction}`,
     {
       agentType: 'cycle:operator',
@@ -72,18 +104,25 @@ function governor(instruction, phaseName) {
       schema: STATE,
       ...(models.operator ? { model: models.operator } : {}),
     },
-  )
+  ), 1)
 }
 
-function role(name, prompt, phaseName, schema) {
-  return agent(prompt, {
-    agentType: `cycle:${name}`,
-    label: name,
-    phase: phaseName,
-    schema,
-    ...(models[name] ? { model: models[name] } : {}),
-    ...(efforts[name] ? { effort: efforts[name] } : {}),
-  })
+// A role is not retried. Re-running an executor that already wrote part of its task would be a
+// second, unbudgeted attempt at work the plan authorized once; the caller pauses the workflow
+// instead, and /cycle:resume continues it deliberately.
+async function role(name, prompt, phaseName, schema) {
+  try {
+    return await agent(prompt, {
+      agentType: `cycle:${name}`,
+      label: name,
+      phase: phaseName,
+      schema,
+      ...(models[name] ? { model: models[name] } : {}),
+      ...(efforts[name] ? { effort: efforts[name] } : {}),
+    })
+  } catch {
+    return null
+  }
 }
 
 // A role that returns nothing did not disagree with anything: its provider stopped answering after
