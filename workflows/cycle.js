@@ -317,7 +317,16 @@ while (cycles < 5) {
     `{"operation":"status","workflowId":${JSON.stringify(id)}}`,
     'Execution',
   )
-  const tasks = current?.tasks?.length ? current.tasks : [{ key: 'task-1' }]
+  // A quick-route workflow has no plan, so one synthetic task is what execution means there. On the
+  // full route the tasks are the ones the architect submitted and the plane accepted, and a reply
+  // that did not carry them is a missing answer, not an empty plan. Inventing one here dispatches
+  // the executor under a key no task owns and no scope authorizes: every write it makes is refused
+  // as out of scope, a repair cycle is spent, and the next attempt does the same thing again.
+  const tasks = current?.tasks?.length ? current.tasks : full ? null : [{ key: 'task-1' }]
+  if (tasks === null) {
+    log('the accepted tasks did not survive the relay — stopping rather than inventing one')
+    return { outcome, stoppedAt: 'execution', workflowId: id }
+  }
 
   // Scoped recall: what this project already learned about the areas these tasks will write.
   const scopes = tasks.flatMap((task) => task.writeScopes ?? [])

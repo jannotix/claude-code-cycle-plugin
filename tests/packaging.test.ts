@@ -209,3 +209,34 @@ test("an empty file and a file that deflates larger both round trip", async () =
     rmSync(work, { force: true, recursive: true })
   }
 })
+
+/**
+ * The workflow script is the product's main command and nothing else in this suite loads it: a
+ * syntax error in it passed 434 green tests and would have shipped. It is not a module — the
+ * runtime wraps it, so it uses top-level `return` and `await` — which is why it is compiled inside
+ * an async wrapper here rather than imported.
+ */
+test("the workflow script parses, and declares the metadata the runtime requires", async () => {
+  const source = await readFile(join(ROOT as string, "workflows", "cycle.js"), "utf8")
+  const meta = /^export const meta = \{[\s\S]*?\n\}\n/mu.exec(source)
+
+  assert.ok(meta !== null, "the script must open with an export const meta literal")
+  assert.match(meta[0], /name:/u)
+  assert.match(meta[0], /description:/u)
+
+  const body = source.slice(meta[0].length)
+  assert.doesNotThrow(
+    () =>
+      new Function(
+        "agent",
+        "parallel",
+        "pipeline",
+        "phase",
+        "log",
+        "args",
+        "budget",
+        "workflow",
+        `"use strict"; return (async () => {${body}})()`,
+      ),
+  )
+})
