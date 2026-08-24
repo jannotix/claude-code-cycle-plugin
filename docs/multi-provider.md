@@ -62,6 +62,51 @@ rather than letting the run fail somewhere less obvious.
 actually reach. Believing five judgements are independent when one model produced all five is worse
 than knowing they are correlated.
 
+## A concrete gateway: LiteLLM
+
+Any gateway that speaks the Anthropic Messages API will do. LiteLLM is one that does, is free, runs
+locally, and needs no account of its own — so it is the one worked through here. Nothing in Cycle
+depends on it.
+
+Install it and write a config naming one entry per model you want a role to reach. Keys are read
+from the environment; putting a literal key in this file is how keys end up in a backup, a screen
+share or a repository.
+
+```yaml
+# cycle-local/litellm.yaml — outside every project Cycle runs on
+model_list:
+  - model_name: anthropic/claude-opus-5
+    litellm_params:
+      model: anthropic/claude-opus-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: openai/gpt-5.6
+    litellm_params:
+      model: openai/gpt-5.6
+      api_key: os.environ/OPENAI_API_KEY
+
+  # One entry per additional provider, each reading its own environment variable.
+```
+
+```bash
+litellm --config cycle-local/litellm.yaml --port 4000
+```
+
+Point the session at it, and **only** at it:
+
+```bash
+export ANTHROPIC_BASE_URL=http://127.0.0.1:4000
+```
+
+Then set each role's model option to a `model_name` from the list above. `/cycle:doctor` reports the
+endpoint, how many distinct providers the five roles actually reach, and what each is billed to. If
+it shows `env credential`, a token is set for the whole session and your subscription is not paying
+— see the credential path above.
+
+The OAuth capability that keeps Anthropic-routed work on the subscription depends on the gateway
+forwarding the `anthropic-beta` header unchanged. LiteLLM's behaviour here varies by version, so it
+is the first thing to check and the reason check 1 below exists.
+
 ## Keep it out of the repository
 
 Gateway configuration, credential shims and keys belong in a directory that is not part of any
