@@ -295,6 +295,13 @@ while (cycles < 5) {
     stage = resumed
   }
 
+  // Where a stage sits in the run. A resumed workflow starts where the plane says it is rather than
+  // walking the pipeline from the top: re-dispatching an executor against a task already recorded
+  // as completed is not a retry but a second, unbudgeted attempt at work authorized once, and the
+  // reviewers waiting below it are never reached.
+  const RANK = { architecture: 1, arbitration: 5, delivery: 6, execution: 2, independent_reviews: 4, quick_execution: 2, verification: 3 }
+  const from = RANK[stage] ?? RANK.execution
+
   if (stage === 'architecture') {
     phase('Architecture')
     const plan = await role(
@@ -311,79 +318,83 @@ while (cycles < 5) {
     if (outcome?.state !== 'execution') return { outcome, stoppedAt: 'architecture' }
   }
 
-  phase('Execution')
-  // The machine decides whether there is room. A deferral is an answer, not an error: the
-  // workflow keeps its state and can be continued when the reason it names has changed.
-  const slot = await governor(
-    `{"operation":"admit","workflowId":${JSON.stringify(id)}}`,
-    'Execution',
-  )
-  if (slot?.admitted === false) {
-    log(`deferred: ${slot.reason}`)
-    return { deferred: slot.reason, outcome, workflowId: id }
-  }
-
-  const statusCall = `{"operation":"status","workflowId":${JSON.stringify(id)}}`
-  let current = await control(statusCall, 'Execution')
-
-  // `relayed` retries when no answer comes back, not when one comes back incomplete, and a status
-  // reply that lost its tasks still looks like an answer. What the caller needs is the field, so
-  // the field is what decides whether to ask again.
-  for (let attempt = 0; full && !current?.tasks?.length && attempt < 2; attempt += 1) {
-    current = await control(statusCall, 'Execution')
-  }
-  // A quick-route workflow has no plan, so one synthetic task is what execution means there. On the
-  // full route the tasks are the ones the architect submitted and the plane accepted, and a reply
-  // that did not carry them is a missing answer, not an empty plan. Inventing one here dispatches
-  // the executor under a key no task owns and no scope authorizes: every write it makes is refused
-  // as out of scope, a repair cycle is spent, and the next attempt does the same thing again.
-  const tasks = current?.tasks?.length ? current.tasks : full ? null : [{ key: 'task-1' }]
-  if (tasks === null) {
-    log('the accepted tasks did not survive the relay — stopping rather than inventing one')
-    return { outcome, stoppedAt: 'execution', workflowId: id }
-  }
-
-  // Scoped recall: what this project already learned about the areas these tasks will write.
-  const scopes = tasks.flatMap((task) => task.writeScopes ?? [])
-  const nearby = scopes.length === 0
-    ? []
-    : (await control(
-        `{"operation":"recall","workflowId":${JSON.stringify(id)},"request":${JSON.stringify(request)},"affectedPaths":${JSON.stringify(scopes)}}`,
-        'Execution',
-      ))?.memories ?? []
-
   let captured = null
-  for (const task of tasks) {
-    const done = await role('executor', executorPrompt(request, task, nearby), 'Execution', EXECUTION)
-    if (!done) return providerUnavailable('executor', 'Execution')
-    if (done.browser) captured = done.browser
-    outcome = await control(
-      `{"operation":"report_task","workflowId":${JSON.stringify(id)},"taskKey":${JSON.stringify(task.key)},"status":${JSON.stringify(done?.status ?? 'blocked')},"summary":${JSON.stringify(done?.summary ?? '')}}`,
+  if (from <= RANK.execution) {
+    phase('Execution')
+    // The machine decides whether there is room. A deferral is an answer, not an error: the
+    // workflow keeps its state and can be continued when the reason it names has changed.
+    const slot = await governor(
+      `{"operation":"admit","workflowId":${JSON.stringify(id)}}`,
       'Execution',
     )
-    if (done?.status !== 'completed') break
+    if (slot?.admitted === false) {
+      log(`deferred: ${slot.reason}`)
+      return { deferred: slot.reason, outcome, workflowId: id }
+    }
+
+    const statusCall = `{"operation":"status","workflowId":${JSON.stringify(id)}}`
+    let current = await control(statusCall, 'Execution')
+
+    // `relayed` retries when no answer comes back, not when one comes back incomplete, and a status
+    // reply that lost its tasks still looks like an answer. What the caller needs is the field, so
+    // the field is what decides whether to ask again.
+    for (let attempt = 0; full && !current?.tasks?.length && attempt < 2; attempt += 1) {
+      current = await control(statusCall, 'Execution')
+    }
+    // A quick-route workflow has no plan, so one synthetic task is what execution means there. On the
+    // full route the tasks are the ones the architect submitted and the plane accepted, and a reply
+    // that did not carry them is a missing answer, not an empty plan. Inventing one here dispatches
+    // the executor under a key no task owns and no scope authorizes: every write it makes is refused
+    // as out of scope, a repair cycle is spent, and the next attempt does the same thing again.
+    const tasks = current?.tasks?.length ? current.tasks : full ? null : [{ key: 'task-1' }]
+    if (tasks === null) {
+      log('the accepted tasks did not survive the relay — stopping rather than inventing one')
+      return { outcome, stoppedAt: 'execution', workflowId: id }
+    }
+
+    // Scoped recall: what this project already learned about the areas these tasks will write.
+    const scopes = tasks.flatMap((task) => task.writeScopes ?? [])
+    const nearby = scopes.length === 0
+      ? []
+      : (await control(
+          `{"operation":"recall","workflowId":${JSON.stringify(id)},"request":${JSON.stringify(request)},"affectedPaths":${JSON.stringify(scopes)}}`,
+          'Execution',
+        ))?.memories ?? []
+
+    for (const task of tasks) {
+      const done = await role('executor', executorPrompt(request, task, nearby), 'Execution', EXECUTION)
+      if (!done) return providerUnavailable('executor', 'Execution')
+      if (done.browser) captured = done.browser
+      outcome = await control(
+        `{"operation":"report_task","workflowId":${JSON.stringify(id)},"taskKey":${JSON.stringify(task.key)},"status":${JSON.stringify(done?.status ?? 'blocked')},"summary":${JSON.stringify(done?.summary ?? '')}}`,
+        'Execution',
+      )
+      if (done?.status !== 'completed') break
+    }
   }
 
-  phase('Verification')
-  outcome = await control(`{"operation":"freeze_candidate","workflowId":${JSON.stringify(id)}}`, 'Verification')
+  if (from <= RANK.verification) {
+    phase('Verification')
+    outcome = await control(`{"operation":"freeze_candidate","workflowId":${JSON.stringify(id)}}`, 'Verification')
 
-  // The interface layer is proved by a flow that was actually driven. The capture belongs to the
-  // candidate, so it is submitted after the freeze and before the gates read it.
-  if (captured) {
-    await control(
-      `{"operation":"submit_browser_evidence","workflowId":${JSON.stringify(id)},"snapshot":${JSON.stringify(captured)}}`,
-      'Verification',
-    )
-  }
+    // The interface layer is proved by a flow that was actually driven. The capture belongs to the
+    // candidate, so it is submitted after the freeze and before the gates read it.
+    if (captured) {
+      await control(
+        `{"operation":"submit_browser_evidence","workflowId":${JSON.stringify(id)},"snapshot":${JSON.stringify(captured)}}`,
+        'Verification',
+      )
+    }
 
-  outcome = await control(`{"operation":"verify","workflowId":${JSON.stringify(id)}}`, 'Verification')
+    outcome = await control(`{"operation":"verify","workflowId":${JSON.stringify(id)}}`, 'Verification')
 
-  if (outcome?.mandatoryPassed !== true) {
-    log(`verification did not pass: ${outcome?.reason ?? 'unknown'}`)
-    const next = await beginRepair(outcome)
-    if (next === null) return { outcome, stoppedAt: 'verification' }
-    stage = next
-    continue
+    if (outcome?.mandatoryPassed !== true) {
+      log(`verification did not pass: ${outcome?.reason ?? 'unknown'}`)
+      const next = await beginRepair(outcome)
+      if (next === null) return { outcome, stoppedAt: 'verification' }
+      stage = next
+      continue
+    }
   }
 
   // Reviewers may cite only identifiers the control plane recorded, so they are handed the list.
@@ -393,7 +404,7 @@ while (cycles < 5) {
   )
   const evidence = recorded?.evidence ?? []
 
-  if (full) {
+  if (full && from <= RANK.independent_reviews) {
     phase('Review')
     const reviews = await parallel([
       () => role('functional-reviewer', reviewPrompt(request, 'completeness', evidence), 'Review', VERDICT),
