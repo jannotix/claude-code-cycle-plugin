@@ -40,10 +40,28 @@ const STATE = {
   },
 }
 
-const models = args?.models ?? {}
-const efforts = args?.efforts ?? {}
-const request = args?.request ?? ''
-const preference = args?.preference ?? 'auto'
+// The skill is told to pass an object and a model asked to build one sometimes passes the raw
+// string instead, which cost a launch to an empty request the plane correctly refused. A request
+// that arrived is honoured in the shape it arrived in. The leading mode word is the one the command
+// surface already documents — `/cycle:run [auto|quick|full]` — so it is read, not left in the text
+// the arbiter will judge the work against.
+const MODES = ['auto', 'quick', 'full']
+
+function given(value) {
+  if (typeof value !== 'string') return value ?? {}
+  const text = value.trim()
+  const space = text.indexOf(' ')
+  const head = (space === -1 ? text : text.slice(0, space)).toLowerCase()
+  return MODES.includes(head)
+    ? { preference: head, request: text.slice(space === -1 ? text.length : space + 1).trim() }
+    : { request: text }
+}
+
+const input = given(args)
+const models = input.models ?? {}
+const efforts = input.efforts ?? {}
+const request = input.request ?? ''
+const preference = input.preference ?? 'auto'
 
 // The script cannot reach the control plane directly, so a cheap operator agent makes each call and
 // returns the result verbatim. It never judges anything.
