@@ -285,6 +285,16 @@ let stage = started.state
 while (cycles < 5) {
   cycles += 1
 
+  // A resumed run enters here already in `repair`, because an idempotent start returns the state of
+  // the workflow it rejoined. The plane decides whether a repair goes back to architecture or to
+  // execution, and until it is asked the workflow is still in `repair` and refuses a task report —
+  // so falling straight through to Execution spends the attempt on a refusal.
+  if (stage === 'repair') {
+    const resumed = await beginRepair({ state: 'repair' })
+    if (resumed === null) return { outcome, stoppedAt: 'repair', workflowId: id }
+    stage = resumed
+  }
+
   if (stage === 'architecture') {
     phase('Architecture')
     const plan = await role(
@@ -313,10 +323,15 @@ while (cycles < 5) {
     return { deferred: slot.reason, outcome, workflowId: id }
   }
 
-  const current = await control(
-    `{"operation":"status","workflowId":${JSON.stringify(id)}}`,
-    'Execution',
-  )
+  const statusCall = `{"operation":"status","workflowId":${JSON.stringify(id)}}`
+  let current = await control(statusCall, 'Execution')
+
+  // `relayed` retries when no answer comes back, not when one comes back incomplete, and a status
+  // reply that lost its tasks still looks like an answer. What the caller needs is the field, so
+  // the field is what decides whether to ask again.
+  for (let attempt = 0; full && !current?.tasks?.length && attempt < 2; attempt += 1) {
+    current = await control(statusCall, 'Execution')
+  }
   // A quick-route workflow has no plan, so one synthetic task is what execution means there. On the
   // full route the tasks are the ones the architect submitted and the plane accepted, and a reply
   // that did not carry them is a missing answer, not an empty plan. Inventing one here dispatches
