@@ -2,10 +2,23 @@
   "mcpServers": {
     "control": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/server.js"],
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/server.js"
+      ],
       "env": {
-        "CLAUDE_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
-        "CLAUDE_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}"
+        "CLAUDE_PLUGIN_OPTION_ARCHITECT_MODEL": "${user_config.architect_model}",
+        "CLAUDE_PLUGIN_OPTION_EXECUTOR_MODEL": "${user_config.executor_model}",
+        "CLAUDE_PLUGIN_OPTION_FUNCTIONAL_REVIEWER_MODEL": "${user_config.functional_reviewer_model}",
+        "CLAUDE_PLUGIN_OPTION_SECURITY_REVIEWER_MODEL": "${user_config.security_reviewer_model}",
+        "CLAUDE_PLUGIN_OPTION_ARBITER_MODEL": "${user_config.arbiter_model}",
+        "CLAUDE_PLUGIN_OPTION_OPERATOR_MODEL": "${user_config.operator_model}",
+        "CLAUDE_PLUGIN_OPTION_ARCHITECT_EFFORT": "${user_config.architect_effort}",
+        "CLAUDE_PLUGIN_OPTION_EXECUTOR_EFFORT": "${user_config.executor_effort}",
+        "CLAUDE_PLUGIN_OPTION_REVIEWER_EFFORT": "${user_config.reviewer_effort}",
+        "CLAUDE_PLUGIN_OPTION_ARBITER_EFFORT": "${user_config.arbiter_effort}",
+        "CLAUDE_PLUGIN_OPTION_MAX_REPAIR_CYCLES": "${user_config.max_repair_cycles}",
+        "CLAUDE_PLUGIN_OPTION_GATE_STRICTNESS": "${user_config.gate_strictness}",
+        "CLAUDE_PLUGIN_OPTION_DATA_DIR": "${user_config.data_dir}"
       }
     }
   }

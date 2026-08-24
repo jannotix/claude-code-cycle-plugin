@@ -107,8 +107,10 @@ believe stays answerable.
 
 ## Model independence
 
-Every role reads its model from your configuration. Defaults inherit the session model, so Cycle
-works unconfigured, and you differentiate only when you want to. Assigning distinct models to the
+Every role reads its model from your configuration — `/plugin` in the application, or
+`--config <option>=<value>` at install. `/cycle:doctor` reports how many options actually reached
+Cycle, so a setting that never arrived is visible rather than silently ignored. Defaults inherit the
+session model, so Cycle works unconfigured, and you differentiate only when you want to. Assigning distinct models to the
 reviewers and the arbiter makes three verdicts genuinely independent instead of one model agreeing
 with itself three times.
 

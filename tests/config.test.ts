@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { test } from "node:test"
 
 import { readConfiguration } from "../src/config.ts"
@@ -59,4 +61,36 @@ test("repair cycles accept the documented range and reject outside it", () => {
   assert.equal(readConfiguration(option({ MAX_REPAIR_CYCLES: "20" })).maxRepairCycles, 20)
   assert.equal(readConfiguration(option({ MAX_REPAIR_CYCLES: "21" })).maxRepairCycles, 5)
   assert.equal(readConfiguration(option({ MAX_REPAIR_CYCLES: "2.5" })).maxRepairCycles, 5)
+})
+
+/**
+ * The host injects CLAUDE_PLUGIN_OPTION_* into hooks, not into MCP servers: an MCP server only
+ * receives what its own env block asks for, through ${user_config.KEY}. Without this test an
+ * option can be declared, saved by the host and silently never applied — which is what happened.
+ */
+test("every declared option is wired to the server and read by it", async () => {
+  const root = join(import.meta.dirname, "..")
+  const manifest = JSON.parse(
+    await readFile(join(root, ".claude-plugin", "plugin.json"), "utf8"),
+  ) as { userConfig: Record<string, unknown> }
+  const mcp = JSON.parse(await readFile(join(root, ".mcp.json"), "utf8")) as {
+    mcpServers: Record<string, { env?: Record<string, string> }>
+  }
+
+  const environment: NodeJS.ProcessEnv = {}
+  for (const server of Object.values(mcp.mcpServers)) {
+    for (const [name, value] of Object.entries(server.env ?? {})) environment[name] = value
+  }
+
+  for (const key of Object.keys(manifest.userConfig)) {
+    assert.equal(
+      environment[`CLAUDE_PLUGIN_OPTION_${key.toUpperCase()}`],
+      `\${user_config.${key}}`,
+      `${key} is declared but never reaches the server`,
+    )
+  }
+
+  // The other direction: a variable the server is handed but does not read changes nothing.
+  assert.deepEqual(readConfiguration(environment).unknown, [])
+  assert.equal(readConfiguration(environment).delivered, Object.keys(manifest.userConfig).length)
 })

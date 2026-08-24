@@ -35,6 +35,7 @@ export interface PackageManager {
 
 export interface DoctorReport {
   readonly configuration: {
+    readonly delivered: number
     readonly gateStrictness: string
     readonly maxRepairCycles: number
     readonly roles: Readonly<Record<Role, { effort: string; model: string }>>
@@ -92,6 +93,16 @@ export async function diagnose(
     findings.push({ code: "config.invalid", message: problem, severity: "error" })
   }
 
+  if (configuration.delivered === 0) {
+    findings.push({
+      code: "config.undelivered",
+      message:
+        "No plugin option reached this process. Anything configured for this plugin is not being " +
+        "applied: every role is running on the session model and the defaults below are in force.",
+      severity: "warn",
+    })
+  }
+
   if (configuration.unknown.length > 0) {
     findings.push({
       code: "config.unknown",
@@ -116,6 +127,7 @@ export async function diagnose(
 
   return {
     configuration: {
+      delivered: configuration.delivered,
       gateStrictness: configuration.gateStrictness,
       maxRepairCycles: configuration.maxRepairCycles,
       roles,
@@ -340,10 +352,10 @@ async function probeModels(
     findings.push({
       code: "models.unroutable",
       message:
-        `${paths.unroutable.join(", ")} names a provider, but ANTHROPIC_BASE_URL is not set to a ` +
-        "gateway, so the request goes to the Anthropic API, which does not serve it. Either point " +
-        "the session at a gateway that routes these names, or configure a model the session can " +
-        "reach.",
+        `Nothing can serve ${paths.unroutable.join(", ")}. ANTHROPIC_BASE_URL is not set to a ` +
+        "gateway, so every request goes to the Anthropic API, which does not have these models and " +
+        "will reject the call. Either point the session at a gateway that routes these names, or " +
+        "configure models the session can reach.",
       severity: "warn",
     })
   }

@@ -33,6 +33,8 @@ export interface Configuration {
   readonly roles: Readonly<Record<Role, RoleSettings>>
   /** Options that were set but that this build does not read, so they change nothing. */
   readonly unknown: readonly string[]
+  /** How many option variables the host actually delivered to this process. */
+  readonly delivered: number
 }
 
 const EFFORTS: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"]
@@ -82,8 +84,11 @@ export function readConfiguration(environment: NodeJS.ProcessEnv = process.env):
     }
   }
 
+  const delivered = Object.keys(environment).filter((key) => key.startsWith(PREFIX)).length
+
   return {
     dataDirectory: option(environment, "DATA_DIR") || undefined,
+    delivered,
     gateStrictness: readStrictness(environment, invalid),
     invalid,
     maxRepairCycles: readRepairCycles(environment, invalid),

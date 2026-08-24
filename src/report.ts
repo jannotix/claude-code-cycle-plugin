@@ -103,6 +103,7 @@ export function renderDoctor(report: DoctorReport): string {
   lines.push("Policy")
   lines.push(row("gate strictness", report.configuration.gateStrictness))
   lines.push(row("repair cycles", String(report.configuration.maxRepairCycles)))
+  lines.push(row("options delivered", String(report.configuration.delivered)))
   lines.push("")
 
   lines.push("Findings")
