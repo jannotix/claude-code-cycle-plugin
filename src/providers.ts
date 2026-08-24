@@ -35,7 +35,7 @@ export interface ProviderPaths {
   readonly endpoint: string | null
   readonly gateway: boolean
   readonly roles: Readonly<Record<Role, RoleProvider>>
-  /** Provider-prefixed models configured with no gateway to route them. */
+  /** Configured models the session endpoint cannot serve, with no gateway to route them. */
   readonly unroutable: readonly string[]
 }
 
@@ -75,7 +75,9 @@ export function describeProviders(
     roles,
     unroutable: gateway
       ? []
-      : [...new Set(JUDGING.map((role) => roles[role].configured))].filter(prefixed).sort(),
+      : [...new Set(JUDGING.map((role) => roles[role].configured))]
+          .filter((model) => model !== INHERIT && !servedByAnthropic(model))
+          .sort(),
   }
 }
 
@@ -97,6 +99,20 @@ function billingOf(provider: string, credentialSet: boolean, gateway: boolean): 
   // request through the gateway stays on the subscription. Anything else is paid for by a
   // credential the gateway holds.
   return provider === "session" || provider === "anthropic" ? "subscription" : "gateway-held"
+}
+
+/**
+ * Anthropic's own naming: the dated `claude-*` identifiers and the family aliases the session
+ * accepts. Without a gateway every request reaches api.anthropic.com, so a name outside this
+ * shape has nothing to answer it — including a `provider/model` form, which that endpoint does
+ * not parse. Matching on Anthropic's naming rather than on a catalogue of everyone else's keeps
+ * the rule from rotting as other providers rename their models.
+ */
+const ANTHROPIC_FAMILIES: readonly string[] = ["claude", "opus", "sonnet", "haiku", "fable"]
+
+function servedByAnthropic(model: string): boolean {
+  const name = model.toLowerCase()
+  return ANTHROPIC_FAMILIES.some((family) => name.startsWith(family))
 }
 
 function prefixed(model: string): boolean {

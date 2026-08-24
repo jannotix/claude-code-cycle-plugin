@@ -25,6 +25,7 @@ import {
 } from "./goals.ts"
 import { chainOf, explain, forget, recall } from "./memory.ts"
 import { serve, type ToolDefinition } from "./mcp.ts"
+import { describeProviders } from "./providers.ts"
 import { verifyCheckpoints } from "./store/checkpoints.ts"
 import { verifyHistory } from "./store/history.ts"
 import { renderDoctor } from "./report.ts"
@@ -119,12 +120,30 @@ const roleSettings: ToolDefinition = {
       model: resolved.model,
       projectId: cycle.project.id,
       role: resolved.role,
-      warning:
-        process.env["CLAUDE_CODE_SUBAGENT_MODEL"] === undefined
-          ? null
-          : "CLAUDE_CODE_SUBAGENT_MODEL is set and overrides this assignment.",
+      warning: roleWarning(resolved.model),
     }
   },
+}
+
+/**
+ * What the caller needs before it spends a workflow on this role: an override that will silently
+ * replace the model, and a model the session has no way to reach. Both make the returned
+ * assignment untrue at the moment it is used.
+ */
+function roleWarning(model: string | null): string | null {
+  const warnings: string[] = []
+
+  if (process.env["CLAUDE_CODE_SUBAGENT_MODEL"] !== undefined) {
+    warnings.push("CLAUDE_CODE_SUBAGENT_MODEL is set and overrides this assignment.")
+  }
+  if (model !== null && describeProviders(cycle.configuration).unroutable.includes(model)) {
+    warnings.push(
+      `No gateway is configured, so "${model}" goes to the Anthropic API, which does not serve ` +
+        "it. The call will fail. Run the doctor before starting a cycle.",
+    )
+  }
+
+  return warnings.length === 0 ? null : warnings.join(" ")
 }
 
 const permissions: ToolDefinition = {

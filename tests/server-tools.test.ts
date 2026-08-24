@@ -64,6 +64,17 @@ test("a configured role reports its model and how to pass it", async () => {
   assert.equal(settings.model, "gpt-5.6-sol")
   assert.equal(settings.effort, "xhigh")
   assert.match(settings.instruction, /"gpt-5\.6-sol"/u)
+  // The caller is about to spend a workflow on this assignment, so it is told here and not only
+  // by the doctor that no configured endpoint can answer that name.
+  assert.match(settings.warning ?? "", /does not serve it/u)
+})
+
+test("a model the session can reach carries no warning", async () => {
+  const [response] = await exchange([call(1, "role_settings", { consultation: "judge" })], {
+    options: { ARBITER_MODEL: "claude-opus-5" },
+  })
+
+  assert.equal(payload<RoleSettings>(response).warning, null)
 })
 
 test("an unknown consultation is refused", async () => {

@@ -99,6 +99,28 @@ test("a trailing or leading slash is a model name, not a provider", () => {
 
   assert.equal(report.roles.arbiter.provider, "anthropic")
   assert.equal(report.roles.executor.provider, "anthropic")
+})
+
+// The bug this caught: a foreign model name with no gateway was reported as provider "anthropic"
+// and nothing else, which reads as a working setup for a call that cannot succeed.
+test("an unprefixed model the Anthropic API does not have is reported as unroutable", () => {
+  const report = paths({ ARBITER_MODEL: "gpt-5.6-sol", ARCHITECT_MODEL: "claude-opus-5" }, {})
+
+  assert.deepEqual(report.unroutable, ["gpt-5.6-sol"])
+})
+
+test("the Anthropic aliases and dated names are routable without a gateway", () => {
+  const report = paths(
+    {
+      ARCHITECT_MODEL: "opusplan",
+      EXECUTOR_MODEL: "sonnet[1m]",
+      FUNCTIONAL_REVIEWER_MODEL: "claude-opus-5",
+      SECURITY_REVIEWER_MODEL: "haiku",
+      ARBITER_MODEL: "fable",
+    },
+    {},
+  )
+
   assert.deepEqual(report.unroutable, [])
 })
 

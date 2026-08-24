@@ -32,7 +32,9 @@ export function describeProviders(configuration, environment = process.env) {
         roles,
         unroutable: gateway
             ? []
-            : [...new Set(JUDGING.map((role) => roles[role].configured))].filter(prefixed).sort(),
+            : [...new Set(JUDGING.map((role) => roles[role].configured))]
+                .filter((model) => model !== INHERIT && !servedByAnthropic(model))
+                .sort(),
     };
 }
 function providerOf(model, gateway) {
@@ -48,6 +50,11 @@ function billingOf(provider, credentialSet, gateway) {
     if (!gateway)
         return "subscription";
     return provider === "session" || provider === "anthropic" ? "subscription" : "gateway-held";
+}
+const ANTHROPIC_FAMILIES = ["claude", "opus", "sonnet", "haiku", "fable"];
+function servedByAnthropic(model) {
+    const name = model.toLowerCase();
+    return ANTHROPIC_FAMILIES.some((family) => name.startsWith(family));
 }
 function prefixed(model) {
     const slash = model.indexOf("/");

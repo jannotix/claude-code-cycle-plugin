@@ -9,6 +9,7 @@ import { findSymbol, impactOf, neighboursOf, scopeBundle } from "./intel/query.j
 import { abort, advance, amend, approveCompletion, currentPlan, extend, focus as focusGoalById, goals, link, newGoal, pause as pauseGoal, plan as planGoal, requestCompletion, resume as resumeGoal, status as goalStatus, } from "./goals.js";
 import { chainOf, explain, forget, recall } from "./memory.js";
 import { serve } from "./mcp.js";
+import { describeProviders } from "./providers.js";
 import { verifyCheckpoints } from "./store/checkpoints.js";
 import { verifyHistory } from "./store/history.js";
 import { renderDoctor } from "./report.js";
@@ -70,12 +71,21 @@ const roleSettings = {
             model: resolved.model,
             projectId: cycle.project.id,
             role: resolved.role,
-            warning: process.env["CLAUDE_CODE_SUBAGENT_MODEL"] === undefined
-                ? null
-                : "CLAUDE_CODE_SUBAGENT_MODEL is set and overrides this assignment.",
+            warning: roleWarning(resolved.model),
         };
     },
 };
+function roleWarning(model) {
+    const warnings = [];
+    if (process.env["CLAUDE_CODE_SUBAGENT_MODEL"] !== undefined) {
+        warnings.push("CLAUDE_CODE_SUBAGENT_MODEL is set and overrides this assignment.");
+    }
+    if (model !== null && describeProviders(cycle.configuration).unroutable.includes(model)) {
+        warnings.push(`No gateway is configured, so "${model}" goes to the Anthropic API, which does not serve ` +
+            "it. The call will fail. Run the doctor before starting a cycle.");
+    }
+    return warnings.length === 0 ? null : warnings.join(" ");
+}
 const permissions = {
     description: "The immutable boundaries between the Cycle roles: what each may do, what it is denied, and " +
         "which of them may modify files. Not configurable and not advisory — the same table the " +
