@@ -153,7 +153,11 @@ export async function indexProject(
     if (options.pool === undefined) await pool.dispose()
   }
 
-  resolveEdges(database, projectId, affected(database, projectId, changed))
+  // One read of the index for both passes. Each used to load the whole table and JSON-parse every
+  // reference list of its own accord, so a delta on a large repository paid for the corpus twice
+  // before touching the one file that had actually changed.
+  const indexed = indexedFiles(database, projectId)
+  resolveEdges(database, projectId, affected(indexed, changed), indexed)
 
   const size = graphSize(database, projectId)
   return {
@@ -227,10 +231,9 @@ function persist(
  * A file that imports a changed file may now resolve a call it could not resolve before, so its
  * edges are recomputed too. Everything else keeps the edges it already has.
  */
-function affected(database: Database, projectId: string, changed: readonly string[]): string[] {
+function affected(files: Map<string, IndexedFile>, changed: readonly string[]): string[] {
   if (changed.length === 0) return []
 
-  const files = indexedFiles(database, projectId)
   const result = new Set(changed)
   // A set, not the array: this is a lookup inside a loop over every file, and a linear scan here
   // makes a first index quadratic in the size of the repository.
@@ -249,10 +252,14 @@ function affected(database: Database, projectId: string, changed: readonly strin
   return [...result]
 }
 
-function resolveEdges(database: Database, projectId: string, paths: readonly string[]): void {
+function resolveEdges(
+  database: Database,
+  projectId: string,
+  paths: readonly string[],
+  files: Map<string, IndexedFile>,
+): void {
   if (paths.length === 0) return
 
-  const files = indexedFiles(database, projectId)
   const edges: GraphEdge[] = []
 
   for (const path of paths) {

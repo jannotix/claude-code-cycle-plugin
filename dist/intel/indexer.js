@@ -93,7 +93,8 @@ export async function indexProject(database, projectId, root, options = {}) {
         if (options.pool === undefined)
             await pool.dispose();
     }
-    resolveEdges(database, projectId, affected(database, projectId, changed));
+    const indexed = indexedFiles(database, projectId);
+    resolveEdges(database, projectId, affected(indexed, changed), indexed);
     const size = graphSize(database, projectId);
     return {
         edges: size.edges,
@@ -131,10 +132,9 @@ function persist(database, projectId, path, digest, parsed, info) {
         size: info?.size ?? -1,
     }, nodes);
 }
-function affected(database, projectId, changed) {
+function affected(files, changed) {
     if (changed.length === 0)
         return [];
-    const files = indexedFiles(database, projectId);
     const result = new Set(changed);
     const moved = new Set(changed);
     for (const [path, file] of files) {
@@ -152,10 +152,9 @@ function affected(database, projectId, changed) {
     }
     return [...result];
 }
-function resolveEdges(database, projectId, paths) {
+function resolveEdges(database, projectId, paths, files) {
     if (paths.length === 0)
         return;
-    const files = indexedFiles(database, projectId);
     const edges = [];
     for (const path of paths) {
         const all = nodesInFiles(database, projectId, [path]);
