@@ -10,6 +10,7 @@ import { ParsePool } from "./pool.js";
 import { gitArgs } from "../git.js";
 const execFileAsync = promisify(execFile);
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
+const STAT_CHUNK = 512;
 const PARSE_CHUNK = 10_000;
 const MODULE_KIND = "module";
 export async function indexProject(database, projectId, root, options = {}) {
@@ -21,31 +22,37 @@ export async function indexProject(database, projectId, root, options = {}) {
     let unchanged = 0;
     let yielded = false;
     const stats = new Map();
-    for (const path of present) {
-        options.signal?.throwIfAborted();
-        const info = await statOf(join(projectRoot, path));
-        if (info === null)
-            continue;
-        stats.set(path, info);
-        const recorded = known.get(path);
-        if (recorded !== undefined &&
-            recorded.size === info.size &&
-            recorded.modifiedAt === info.modifiedAt &&
-            info.modifiedAt >= 0 &&
-            info.modifiedAt < recorded.indexedAt) {
-            unchanged += 1;
-            continue;
-        }
-        const digest = await digestOf(join(projectRoot, path), info.size);
-        if (digest === null)
-            continue;
-        digests.set(path, digest);
-        if (recorded?.digest === digest) {
-            unchanged += 1;
-            touchIndexState(database, projectId, path, info.size, info.modifiedAt, Date.now());
-        }
-        else {
-            changed.push(path);
+    const startedScan = Date.now();
+    const paths = [...present];
+    for (let start = 0; start < paths.length; start += STAT_CHUNK) {
+        const slice = paths.slice(start, start + STAT_CHUNK);
+        const infos = await Promise.all(slice.map((path) => statOf(join(projectRoot, path))));
+        for (const [offset, path] of slice.entries()) {
+            options.signal?.throwIfAborted();
+            const info = infos[offset] ?? null;
+            if (info === null)
+                continue;
+            stats.set(path, info);
+            const recorded = known.get(path);
+            if (recorded !== undefined &&
+                recorded.size === info.size &&
+                recorded.modifiedAt === info.modifiedAt &&
+                info.modifiedAt >= 0 &&
+                info.modifiedAt < recorded.indexedAt) {
+                unchanged += 1;
+                continue;
+            }
+            const digest = await digestOf(join(projectRoot, path), info.size);
+            if (digest === null)
+                continue;
+            digests.set(path, digest);
+            if (recorded?.digest === digest) {
+                unchanged += 1;
+                touchIndexState(database, projectId, path, info.size, info.modifiedAt, Date.now());
+            }
+            else {
+                changed.push(path);
+            }
         }
     }
     let removed = 0;
@@ -58,6 +65,8 @@ export async function indexProject(database, projectId, root, options = {}) {
         });
         removed += 1;
     }
+    const scan = Date.now() - startedScan;
+    const startedParse = Date.now();
     const pool = options.pool ?? new ParsePool();
     let skipped = 0;
     let updated = 0;
@@ -93,8 +102,11 @@ export async function indexProject(database, projectId, root, options = {}) {
         if (options.pool === undefined)
             await pool.dispose();
     }
+    const parse = Date.now() - startedParse;
+    const startedEdges = Date.now();
     const indexed = indexedFiles(database, projectId);
     resolveEdges(database, projectId, affected(indexed, changed), indexed);
+    const edgesMs = Date.now() - startedEdges;
     const size = graphSize(database, projectId);
     return {
         edges: size.edges,
@@ -102,6 +114,7 @@ export async function indexProject(database, projectId, root, options = {}) {
         nodes: size.nodes,
         removed,
         skipped,
+        spent: { edges: edgesMs, parse, scan },
         unchanged,
         updated,
         yielded,
