@@ -9,6 +9,19 @@ export function createWorkflow(database, projectId, originalText, maxRepairCycle
     });
     return { id, requestDigest };
 }
+export function requestDigestOf(originalText) {
+    return digest(DIGEST_DOMAIN.request, { attachments: [], text: originalText });
+}
+export function activeWorkflowForRequest(database, projectId, requestDigest) {
+    const row = database.get(`select workflows.* from workflows
+       join requests on requests.workflow_id = workflows.id
+      where workflows.project_id = ?
+        and requests.digest = ?
+        and workflows.state not in ('cancelled', 'completed')
+      order by workflows.created_at desc
+      limit 1`, projectId, requestDigest);
+    return row === undefined ? undefined : toWorkflow(row);
+}
 export function loadWorkflow(database, id) {
     const row = database.get("select * from workflows where id = ?", id);
     return row === undefined ? undefined : toWorkflow(row);

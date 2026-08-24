@@ -141,6 +141,39 @@ test("a localised change routes to the quick path and skips architecture", () =>
   }
 })
 
+/**
+ * Found by a real run: the operator relay lost the response to `start`, the driver sent it again,
+ * and the run forked into three workflows for one request. Two of them sat in `quick_execution`
+ * forever, and each looked healthy on its own.
+ */
+test("a repeated start rejoins the running workflow instead of forking it", () => {
+  const { close, ctx } = context()
+  try {
+    const shape = { resumed: false, workflowId: "" }
+    const first = startWorkflow(ctx, "rename a helper", ["src/date.ts"], "auto") as typeof shape
+    const again = startWorkflow(ctx, "rename a helper", ["src/date.ts"], "auto") as typeof shape
+
+    assert.equal(first.resumed, false)
+    assert.equal(again.resumed, true)
+    assert.equal(again.workflowId, first.workflowId)
+  } finally {
+    close()
+  }
+})
+
+test("a different request in the same project starts its own workflow", () => {
+  const { close, ctx } = context()
+  try {
+    const shape = { workflowId: "" }
+    const first = startWorkflow(ctx, "rename a helper", ["src/date.ts"], "auto") as typeof shape
+    const other = startWorkflow(ctx, "rename another helper", ["src/date.ts"], "auto") as typeof shape
+
+    assert.notEqual(other.workflowId, first.workflowId)
+  } finally {
+    close()
+  }
+})
+
 test("an empty request is refused: there is nothing to judge against", () => {
   const { close, ctx } = context()
   try {
@@ -750,6 +783,41 @@ test("reconcile reports why a workflow paused", async () => {
     assert.equal(result.state, "paused")
     assert.equal(result.pausedBecause, "provider unavailable: the executor produced no answer")
     assert.match(result.next, /\/cycle:resume/u)
+  } finally {
+    close()
+  }
+})
+
+/**
+ * Found by a real run: the driver wrote two tasks' files before reporting the first, was told the
+ * paths were outside every authorized scope, and moved them aside with `git stash` to get past the
+ * check. The refusal stands either way — only the diagnosis differs, and the wrong diagnosis is
+ * what produced the workaround.
+ */
+test("a path owned by a task that has not been reported names that task, not a violation", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "expose health", ["src/health"], "full") as {
+      workflowId: string
+    }
+    submitPlan(ctx, started.workflowId, {
+      ...PLAN,
+      tasks: [
+        PLAN.tasks[0]!,
+        { ...PLAN.tasks[0]!, key: "task-2", title: "Tests", write_scopes: ["tests/health"] },
+      ],
+    })
+
+    const reported = reportTask(ctx, started.workflowId, "task-1", "completed", "done", [
+      "src/health/route.ts",
+      "tests/health/route.test.ts",
+    ]) as { outOfScope: string[]; reason: string; unreportedTasks: string[] }
+
+    assert.deepEqual(reported.outOfScope, ["tests/health/route.test.ts"])
+    assert.deepEqual(reported.unreportedTasks, ["task-2"])
+    assert.match(reported.reason, /owned by task-2/u)
+    assert.match(reported.reason, /Do not move the changes aside/u)
+    assert.doesNotMatch(reported.reason, /outside every write scope/u)
   } finally {
     close()
   }

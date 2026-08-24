@@ -18,8 +18,10 @@ import { loadEvidence, recordEvidence } from "../store/evidence.ts"
 import { latestCheckpoint, signCheckpoint, verifyCheckpoints } from "../store/checkpoints.ts"
 import { appendHistory, lastEvent, readHistory, verifyHistory } from "../store/history.ts"
 import type { Database } from "../store/database.ts"
+import { goalOfWorkflow } from "../store/goals.ts"
 import { newId } from "../store/ids.ts"
 import {
+  activeWorkflowForRequest,
   candidateManifest,
   createWorkflow,
   frozenFiles,
@@ -31,6 +33,7 @@ import {
   loadWorkflow,
   recordArbitration,
   recordCandidate,
+  requestDigestOf,
   saveWorkflow,
   savePlan,
   setTaskState,
@@ -67,6 +70,28 @@ export function startWorkflow(
   const text = request.trim()
   if (!text) throw new WorkflowError("a workflow needs the user's exact request")
 
+  // A relayed start whose response was lost comes back as an identical call. Rejoining the run it
+  // already created is the only safe answer: a second workflow would fork the work, and both halves
+  // would look healthy while neither was the whole.
+  const existing = activeWorkflowForRequest(
+    context.database,
+    context.projectId,
+    requestDigestOf(text),
+  )
+  if (existing !== undefined) {
+    const decision = route(text, affectedPaths, preference)
+    return {
+      critical: decision.critical,
+      goalId: goalOfWorkflow(context.database, existing.id) ?? null,
+      mode: existing.mode ?? decision.mode,
+      rationale: decision.rationale,
+      requestDigest: requestDigestOf(text),
+      resumed: true,
+      state: existing.state,
+      workflowId: existing.id,
+    }
+  }
+
   const { id, requestDigest } = createWorkflow(
     context.database,
     context.projectId,
@@ -94,6 +119,7 @@ export function startWorkflow(
     mode: decision.mode,
     rationale: decision.rationale,
     requestDigest,
+    resumed: false,
     state: workflow.state,
     workflowId: id,
   }
@@ -183,12 +209,19 @@ export function reportTask(
         { target: "execution", type: "execution_failed" },
         now,
       )
+      const pending = pendingOwners(context, workflowId, key, violations)
       return {
         outOfScope: violations,
         reason:
-          `the task changed ${violations.length} path(s) outside every write scope the plan ` +
-          "authorized",
+          pending.length === 0
+            ? `the task changed ${violations.length} path(s) outside every write scope the plan ` +
+              "authorized"
+            : `the task changed path(s) owned by ${pending.join(", ")}, which have not been ` +
+              "reported yet. Report each task as it is completed, before starting the next one. " +
+              "Do not move the changes aside to get past this: the paths are authorized, the " +
+              "order is not.",
         state: next.state,
+        unreportedTasks: pending,
       }
     }
   }
@@ -219,6 +252,26 @@ export function reportTask(
  * to keep in step. A quick-route workflow has no plan and therefore authorizes nothing here; its
  * candidate is bounded by the freeze and the gates instead.
  */
+/**
+ * Of the violating paths, the tasks that do authorize them but have not been reported. The
+ * distinction matters at the point of refusal: "no task may touch this" and "this task may not
+ * touch it yet" call for opposite responses, and a caller told the first when the second is true
+ * will move the files aside rather than report the work in order.
+ */
+function pendingOwners(
+  context: ServiceContext,
+  workflowId: string,
+  key: string,
+  violations: readonly string[],
+): string[] {
+  const owners = new Set<string>()
+  for (const task of loadTasks(context.database, workflowId)) {
+    if (task.key === key || task.state === "completed") continue
+    if (violations.some((path) => insideAny(path, task.writeScopes))) owners.add(task.key)
+  }
+  return [...owners].sort()
+}
+
 function outOfScope(
   context: ServiceContext,
   workflowId: string,

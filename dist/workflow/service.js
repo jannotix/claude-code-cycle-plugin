@@ -9,8 +9,9 @@ import { runProof } from "../evidence/proof.js";
 import { loadEvidence, recordEvidence } from "../store/evidence.js";
 import { latestCheckpoint, signCheckpoint, verifyCheckpoints } from "../store/checkpoints.js";
 import { appendHistory, lastEvent, readHistory, verifyHistory } from "../store/history.js";
+import { goalOfWorkflow } from "../store/goals.js";
 import { newId } from "../store/ids.js";
-import { candidateManifest, createWorkflow, frozenFiles, latestWorkflow, loadPlan, loadRequest, loadReviews, loadTasks, loadWorkflow, recordArbitration, recordCandidate, saveWorkflow, savePlan, setTaskState, submitReview, } from "../store/workflows.js";
+import { activeWorkflowForRequest, candidateManifest, createWorkflow, frozenFiles, latestWorkflow, loadPlan, loadRequest, loadReviews, loadTasks, loadWorkflow, recordArbitration, recordCandidate, requestDigestOf, saveWorkflow, savePlan, setTaskState, submitReview, } from "../store/workflows.js";
 import { apply, isTerminal, TransitionError } from "./machine.js";
 import { parsePlan } from "./plan.js";
 import { route } from "./routing.js";
@@ -26,6 +27,20 @@ export function startWorkflow(context, request, affectedPaths, preference, now =
     const text = request.trim();
     if (!text)
         throw new WorkflowError("a workflow needs the user's exact request");
+    const existing = activeWorkflowForRequest(context.database, context.projectId, requestDigestOf(text));
+    if (existing !== undefined) {
+        const decision = route(text, affectedPaths, preference);
+        return {
+            critical: decision.critical,
+            goalId: goalOfWorkflow(context.database, existing.id) ?? null,
+            mode: existing.mode ?? decision.mode,
+            rationale: decision.rationale,
+            requestDigest: requestDigestOf(text),
+            resumed: true,
+            state: existing.state,
+            workflowId: existing.id,
+        };
+    }
     const { id, requestDigest } = createWorkflow(context.database, context.projectId, text, context.maxRepairCycles, now);
     const decision = route(text, affectedPaths, preference);
     let workflow = load(context, id);
@@ -44,6 +59,7 @@ export function startWorkflow(context, request, affectedPaths, preference, now =
         mode: decision.mode,
         rationale: decision.rationale,
         requestDigest,
+        resumed: false,
         state: workflow.state,
         workflowId: id,
     };
@@ -102,11 +118,18 @@ export function reportTask(context, workflowId, key, status, summary, changedPat
                 task: key,
             });
             const next = transition(context, workflow, { target: "execution", type: "execution_failed" }, now);
+            const pending = pendingOwners(context, workflowId, key, violations);
             return {
                 outOfScope: violations,
-                reason: `the task changed ${violations.length} path(s) outside every write scope the plan ` +
-                    "authorized",
+                reason: pending.length === 0
+                    ? `the task changed ${violations.length} path(s) outside every write scope the plan ` +
+                        "authorized"
+                    : `the task changed path(s) owned by ${pending.join(", ")}, which have not been ` +
+                        "reported yet. Report each task as it is completed, before starting the next one. " +
+                        "Do not move the changes aside to get past this: the paths are authorized, the " +
+                        "order is not.",
                 state: next.state,
+                unreportedTasks: pending,
             };
         }
     }
@@ -122,6 +145,16 @@ export function reportTask(context, workflowId, key, status, summary, changedPat
     }
     const remaining = loadTasks(context.database, workflowId).filter((task) => task.state !== "completed");
     return { remaining: remaining.map((task) => task.key), state: workflow.state };
+}
+function pendingOwners(context, workflowId, key, violations) {
+    const owners = new Set();
+    for (const task of loadTasks(context.database, workflowId)) {
+        if (task.key === key || task.state === "completed")
+            continue;
+        if (violations.some((path) => insideAny(path, task.writeScopes)))
+            owners.add(task.key);
+    }
+    return [...owners].sort();
 }
 function outOfScope(context, workflowId, key, changedPaths) {
     const tasks = loadTasks(context.database, workflowId);

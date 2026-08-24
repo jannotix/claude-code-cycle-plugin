@@ -54,6 +54,36 @@ export function createWorkflow(
   return { id, requestDigest }
 }
 
+/** The digest a request will be stored under, so a caller can look one up before creating it. */
+export function requestDigestOf(originalText: string): string {
+  return digest(DIGEST_DOMAIN.request, { attachments: [], text: originalText })
+}
+
+/**
+ * A workflow already running for this exact request. `start` is relayed through an agent, and a
+ * relay that loses the response will send it again: without this the second call mints a second
+ * workflow, and the run silently forks. Terminal workflows are excluded so the same request can be
+ * run again deliberately once the first one is finished.
+ */
+export function activeWorkflowForRequest(
+  database: Database,
+  projectId: string,
+  requestDigest: string,
+): StoredWorkflow | undefined {
+  const row = database.get<Row>(
+    `select workflows.* from workflows
+       join requests on requests.workflow_id = workflows.id
+      where workflows.project_id = ?
+        and requests.digest = ?
+        and workflows.state not in ('cancelled', 'completed')
+      order by workflows.created_at desc
+      limit 1`,
+    projectId,
+    requestDigest,
+  )
+  return row === undefined ? undefined : toWorkflow(row)
+}
+
 export function loadWorkflow(database: Database, id: string): StoredWorkflow | undefined {
   const row = database.get<Row>("select * from workflows where id = ?", id)
   return row === undefined ? undefined : toWorkflow(row)
