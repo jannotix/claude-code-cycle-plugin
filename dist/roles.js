@@ -17,15 +17,24 @@ export const CONSULTATION = {
 const CONSULTATION_AGENT = {
     executor: "cycle:executor-advisor",
 };
+const SUBAGENT_MODELS = ["fable", "haiku", "opus", "sonnet"];
+export function subagentModelFor(model) {
+    if (model === null)
+        return null;
+    const name = model.toLowerCase();
+    return SUBAGENT_MODELS.find((family) => name === family || name.includes(family)) ?? null;
+}
 export function resolveRole(configuration, role) {
     const configured = configuration.roles[role];
     const inherits = configured.model === INHERIT;
+    const model = inherits ? null : configured.model;
     return {
         agent: ROLE_AGENT[role],
         effort: configured.effort,
         inherits,
-        model: inherits ? null : configured.model,
+        model,
         role,
+        subagentModel: subagentModelFor(model),
     };
 }
 export function resolveConsultation(configuration, consultation) {

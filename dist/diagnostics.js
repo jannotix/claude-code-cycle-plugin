@@ -4,6 +4,7 @@ import { freemem } from "node:os";
 import { isAbsolute, relative } from "node:path";
 import { INHERIT, ROLES } from "./config.js";
 import { probeVersion } from "./exec.js";
+import { subagentModelFor } from "./roles.js";
 import { settingsPath } from "./paths.js";
 import { describeProviders } from "./providers.js";
 import { keyPermissions, verifyCheckpoints } from "./store/checkpoints.js";
@@ -279,6 +280,47 @@ async function probeModels(configuration, environment, findings) {
                     "make the reviews genuinely independent."
                 : "Both reviewers and the arbiter use the same model. Correlated model errors are more " +
                     "likely than the three-verdict structure suggests.",
+            severity: "warn",
+        });
+    }
+    const advisory = [
+        "architect",
+        "executor",
+        "functional_reviewer",
+        "security_reviewer",
+        "arbiter",
+    ];
+    const collapsed = new Map();
+    const inexpressible = [];
+    for (const role of advisory) {
+        const model = configuration.roles[role].model;
+        if (model === INHERIT)
+            continue;
+        const alias = subagentModelFor(model);
+        if (alias === null) {
+            inexpressible.push(`${role} (${model})`);
+            continue;
+        }
+        collapsed.set(alias, [...(collapsed.get(alias) ?? []), role]);
+    }
+    for (const [alias, roles] of collapsed) {
+        if (roles.length < 2)
+            continue;
+        findings.push({
+            code: "models.subagent_collapse",
+            message: `${roles.join(" and ")} are configured to different models that the Agent tool cannot tell ` +
+                `apart: both reach it as "${alias}". In the advisory commands they run on the same model, ` +
+                "so their verdicts are not independent. The governed cycle is unaffected — /cycle:run " +
+                "dispatches the identifier you configured.",
+            severity: "warn",
+        });
+    }
+    if (inexpressible.length > 0) {
+        findings.push({
+            code: "models.subagent_unavailable",
+            message: `The Agent tool accepts a family alias, not a model identifier, and nothing it accepts ` +
+                `matches ${inexpressible.join(", ")}. Those roles run on the session model in the advisory ` +
+                "commands. The governed cycle is unaffected.",
             severity: "warn",
         });
     }

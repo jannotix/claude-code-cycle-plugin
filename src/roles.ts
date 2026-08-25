@@ -35,17 +35,42 @@ export interface ResolvedRole {
   readonly inherits: boolean
   readonly model: string | null
   readonly role: Role
+  /**
+   * What the Agent tool will accept for this role, or null when nothing it accepts matches. The
+   * tool takes a family alias, not a model identifier, so a configured `claude-opus-4-7` reaches a
+   * subagent as `opus` and nothing finer survives the trip.
+   */
+  readonly subagentModel: SubagentModel | null
+}
+
+/** The only values the host's Agent tool accepts for a subagent. */
+export type SubagentModel = "fable" | "haiku" | "opus" | "sonnet"
+
+const SUBAGENT_MODELS: readonly SubagentModel[] = ["fable", "haiku", "opus", "sonnet"]
+
+/**
+ * The family alias a configured model reduces to. Matching on the family name rather than a table
+ * of identifiers keeps this from rotting as versions change: `claude-opus-4-8` and a `claude-opus-9`
+ * that does not exist yet both reduce to `opus`. A name outside those families reduces to nothing,
+ * which is the honest answer — the Agent tool cannot express it at all.
+ */
+export function subagentModelFor(model: string | null): SubagentModel | null {
+  if (model === null) return null
+  const name = model.toLowerCase()
+  return SUBAGENT_MODELS.find((family) => name === family || name.includes(family)) ?? null
 }
 
 export function resolveRole(configuration: Configuration, role: Role): ResolvedRole {
   const configured = configuration.roles[role]
   const inherits = configured.model === INHERIT
+  const model = inherits ? null : configured.model
   return {
     agent: ROLE_AGENT[role],
     effort: configured.effort,
     inherits,
-    model: inherits ? null : configured.model,
+    model,
     role,
+    subagentModel: subagentModelFor(model),
   }
 }
 

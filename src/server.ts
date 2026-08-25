@@ -101,7 +101,9 @@ const roleSettings: ToolDefinition = {
     "invoking a Cycle role so the user's own model configuration is honoured. Returns data only: " +
     "`agent` is the subagent type to invoke, `model` is the model to pass (null means the role " +
     "inherits the session model, so omit the parameter), and `effort` is the reasoning effort. " +
-    "The skill that called this says what to do with them; this tool never does.",
+    "`subagentModel` is what the Agent tool accepts for this role — it takes a family alias, not " +
+    "a model identifier — and is null when nothing it accepts matches. The skill that called this " +
+    "says what to do with them; this tool never does.",
   inputSchema: {
     additionalProperties: false,
     properties: {
@@ -124,6 +126,10 @@ const roleSettings: ToolDefinition = {
       // the instruction; this returns what the instruction needs.
       inherits: resolved.inherits,
       model: resolved.model,
+      // The Agent tool takes a family alias, not a model identifier, so this is what it will
+      // accept. Null means nothing it accepts matches what the user configured: the role will run
+      // on the session model, and saying so here is better than the caller improvising.
+      subagentModel: resolved.subagentModel,
       projectId: cycle.project.id,
       role: resolved.role,
       warning: roleWarning(resolved.model),

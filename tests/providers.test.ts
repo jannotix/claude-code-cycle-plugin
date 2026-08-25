@@ -3,6 +3,7 @@ import { test } from "node:test"
 
 import { readConfiguration } from "../src/config.ts"
 import { describeProviders } from "../src/providers.ts"
+import { subagentModelFor } from "../src/roles.ts"
 
 const option = (values: Record<string, string>): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(values).map(([key, value]) => [`CLAUDE_PLUGIN_OPTION_${key}`, value]))
@@ -132,4 +133,23 @@ test("the operator default is reported like any other role", () => {
   assert.equal(report.roles.operator.provider, "anthropic")
   assert.equal(report.roles.operator.billing, "subscription")
   assert.equal(report.roles.operator.effort, "low")
+})
+
+/**
+ * Found by running the product: the Agent tool takes a family alias and refuses a model
+ * identifier, so two roles configured to different models in the same family reach it as the same
+ * one. The configuration still reads as distinct, which is what made it silent.
+ */
+test("models in the same family reduce to one subagent alias", () => {
+  assert.equal(subagentModelFor("claude-opus-4-7"), "opus")
+  assert.equal(subagentModelFor("claude-opus-4-8"), "opus")
+  assert.equal(subagentModelFor("claude-fable-5"), "fable")
+  assert.equal(subagentModelFor("claude-sonnet-5"), "sonnet")
+  assert.equal(subagentModelFor("haiku"), "haiku")
+})
+
+test("a model outside those families reduces to nothing, rather than to a guess", () => {
+  assert.equal(subagentModelFor("openai/gpt-5.6"), null)
+  assert.equal(subagentModelFor("minimax-m3"), null)
+  assert.equal(subagentModelFor(null), null)
 })

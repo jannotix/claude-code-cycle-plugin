@@ -5,6 +5,7 @@ import { isAbsolute, relative } from "node:path"
 
 import { INHERIT, ROLES, type Configuration, type Role } from "./config.ts"
 import { probeVersion, type ExecutableKind } from "./exec.ts"
+import { subagentModelFor } from "./roles.ts"
 import { settingsPath } from "./paths.ts"
 import { describeProviders, type RoleProvider } from "./providers.ts"
 import type { Runtime } from "./runtime.ts"
@@ -406,6 +407,55 @@ async function probeModels(
             "make the reviews genuinely independent."
           : "Both reviewers and the arbiter use the same model. Correlated model errors are more " +
             "likely than the three-verdict structure suggests.",
+      severity: "warn",
+    })
+  }
+
+  // The advisory commands dispatch through the host's Agent tool, which takes a family alias and
+  // refuses a model identifier. Two roles configured to different models in the same family reach
+  // that tool as the same alias, so their verdicts stop being independent — silently, because the
+  // configuration still reads as five distinct models. The governed cycle is unaffected: it
+  // dispatches through the workflow runtime, which takes the identifier as configured.
+  const advisory: readonly Role[] = [
+    "architect",
+    "executor",
+    "functional_reviewer",
+    "security_reviewer",
+    "arbiter",
+  ]
+  const collapsed = new Map<string, Role[]>()
+  const inexpressible: string[] = []
+  for (const role of advisory) {
+    const model = configuration.roles[role].model
+    if (model === INHERIT) continue
+    const alias = subagentModelFor(model)
+    if (alias === null) {
+      inexpressible.push(`${role} (${model})`)
+      continue
+    }
+    collapsed.set(alias, [...(collapsed.get(alias) ?? []), role])
+  }
+
+  for (const [alias, roles] of collapsed) {
+    if (roles.length < 2) continue
+    findings.push({
+      code: "models.subagent_collapse",
+      message:
+        `${roles.join(" and ")} are configured to different models that the Agent tool cannot tell ` +
+        `apart: both reach it as "${alias}". In the advisory commands they run on the same model, ` +
+        "so their verdicts are not independent. The governed cycle is unaffected — /cycle:run " +
+        "dispatches the identifier you configured.",
+      severity: "warn",
+    })
+  }
+
+  if (inexpressible.length > 0) {
+    findings.push({
+      code: "models.subagent_unavailable",
+      message:
+        `The Agent tool accepts a family alias, not a model identifier, and nothing it accepts ` +
+        `matches ${inexpressible.join(", ")}. Those roles run on the session model in the advisory ` +
+        "commands. The governed cycle is unaffected.",
       severity: "warn",
     })
   }
