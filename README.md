@@ -1,5 +1,9 @@
 # Cycle
 
+<p align="center">
+  <img src="assets/logo.svg" width="160" alt="Cycle logo">
+</p>
+
 Evidence-gated delivery for Claude Code.
 
 Cycle replaces the single agent that plans, implements and then approves its own work with five

@@ -17,6 +17,10 @@ export const ALLOWED = [
   { kind: "file", path: "README.md" },
   { kind: "file", path: "CHANGELOG.md" },
   { kind: "file", path: "SECURITY.md" },
+  // The README shows the mark, and a reader who unpacks the archive should see it rather than a
+  // broken image. Two files, both small; nothing else under assets ships.
+  { extension: ".svg", kind: "tree", path: "assets" },
+  { extension: ".png", kind: "tree", path: "assets" },
   { extension: ".md", kind: "tree", path: "agents" },
   { extension: ".md", kind: "tree", path: "skills" },
   { extension: ".js", kind: "tree", path: "workflows" },
