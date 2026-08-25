@@ -12,8 +12,12 @@ final arbiter that judges against **your original request** — not the architec
 A candidate is delivered only when the arbiter approves it. A rejected candidate goes back for
 repair, up to five cycles.
 
-> **Status: in development.** Version 1.0.0 is not released. Installation is not supported until the
-> Windows and WSL certification matrix passes.
+> **Version 1.0.0.** Every certification row applicable to Windows 11 and to Ubuntu 24.04 under WSL2
+> passes, the hand-checked ones included. Per-role providers ship unverified — see the changelog.
+
+```bash
+claude plugin marketplace add jannotix/claude-code-cycle-plugin
+```
 
 ## The problem
 

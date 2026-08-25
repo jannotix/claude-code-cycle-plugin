@@ -35,4 +35,4 @@ before it reaches memory.
 
 ## Supported versions
 
-Version 1.0.0 is unreleased. Once released, the current minor version receives security fixes.
+Version 1.0.0 is the current release. The current minor version receives security fixes.
