@@ -3,6 +3,33 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-08-26
+
+### Fixed
+
+- The advisory commands could not honour a per-role model. They dispatch through the host's Agent
+  tool, which takes a family alias — `sonnet`, `opus`, `haiku`, `fable` — and refuses a model
+  identifier, so the caller improvised: one run dropped the model and used the session default,
+  another reduced it. `role_settings` now returns the alias the tool accepts, and the skills pass
+  that rather than inventing one.
+- `role_settings` returned an `instruction` field reading "Invoke the agent with model X". An
+  imperative sentence inside tool output is indistinguishable from an injection riding in data, and
+  a caller that guards against that refused it — discarding the model beside it and running the role
+  on the session default without a trace. The tool returns data only; the skills hold the
+  instruction.
+
+### Known limitation
+
+Four aliases is the ceiling on how many distinct models the advisory commands can reach, and models
+in one family cannot be told apart. A configuration of `claude-opus-4-7`, `claude-opus-4-8` and
+`claude-opus-5` for the two reviewers and the arbiter reaches the Agent tool as `opus` three times:
+three of the five judging voices become one. `/cycle:doctor` now names this rather than reporting
+five distinct models and leaving it to be discovered.
+
+`/cycle:run` dispatches through the workflow runtime with the identifier as configured. Whether that
+runtime honours it is not established: a deliberately invalid identifier produced a plan and raised
+nothing, so a model that was never applied cannot be told from one that was.
+
 ## [1.0.0] — 2026-08-25
 
 First release. Every certification row applicable to Windows 11 and to Ubuntu 24.04 under WSL2

@@ -111,6 +111,11 @@ function probeIntegrity(cycle, findings) {
         });
     }
 }
+function listed(items) {
+    if (items.length < 3)
+        return items.join(" and ");
+    return `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
 function probeStore(cycle, findings) {
     const database = cycle.store();
     if (database === undefined) {
@@ -308,8 +313,8 @@ async function probeModels(configuration, environment, findings) {
             continue;
         findings.push({
             code: "models.subagent_collapse",
-            message: `${roles.join(" and ")} are configured to different models that the Agent tool cannot tell ` +
-                `apart: both reach it as "${alias}". In the advisory commands they run on the same model, ` +
+            message: `${listed(roles)} are configured to different models that the Agent tool cannot tell ` +
+                `apart: each reaches it as "${alias}". In the advisory commands they run on the same model, ` +
                 "so their verdicts are not independent. /cycle:run dispatches the identifier you " +
                 "configured instead, but nothing confirms the runtime honours it: an identifier it does " +
                 "not recognise produces no error, so a model that was never applied looks exactly like " +

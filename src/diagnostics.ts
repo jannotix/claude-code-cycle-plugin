@@ -202,6 +202,12 @@ function probeIntegrity(cycle: Runtime, findings: Finding[]): void {
   }
 }
 
+/** "a and b" for two, "a, b and c" beyond that: the warning is read, not parsed. */
+function listed(items: readonly string[]): string {
+  if (items.length < 3) return items.join(" and ")
+  return `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`
+}
+
 function probeStore(cycle: Runtime, findings: Finding[]): DoctorReport["store"] {
   const database = cycle.store()
   if (database === undefined) {
@@ -441,8 +447,8 @@ async function probeModels(
     findings.push({
       code: "models.subagent_collapse",
       message:
-        `${roles.join(" and ")} are configured to different models that the Agent tool cannot tell ` +
-        `apart: both reach it as "${alias}". In the advisory commands they run on the same model, ` +
+        `${listed(roles)} are configured to different models that the Agent tool cannot tell ` +
+        `apart: each reaches it as "${alias}". In the advisory commands they run on the same model, ` +
         "so their verdicts are not independent. /cycle:run dispatches the identifier you " +
         "configured instead, but nothing confirms the runtime honours it: an identifier it does " +
         "not recognise produces no error, so a model that was never applied looks exactly like " +
