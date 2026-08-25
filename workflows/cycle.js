@@ -346,7 +346,15 @@ while (cycles < 5) {
     // that did not carry them is a missing answer, not an empty plan. Inventing one here dispatches
     // the executor under a key no task owns and no scope authorizes: every write it makes is refused
     // as out of scope, a repair cycle is spent, and the next attempt does the same thing again.
-    const tasks = current?.tasks?.length ? current.tasks : full ? null : [{ key: 'task-1' }]
+    // Only the plane saying `quick` authorizes the synthetic task, and it says so in the reply that
+    // carries the tasks. Deriving it from the start reply instead made a lost `mode` field mean
+    // "quick", and a full-route run was then dispatched under a key no task owned: eight repair
+    // cycles of scope violations, every one of them the executor doing correct work.
+    const tasks = current?.tasks?.length
+      ? current.tasks
+      : current?.mode === 'quick'
+        ? [{ key: 'task-1' }]
+        : null
     if (tasks === null) {
       log('the accepted tasks did not survive the relay — stopping rather than inventing one')
       return { outcome, stoppedAt: 'execution', workflowId: id }
@@ -480,7 +488,12 @@ Each task: key, title, objective, requirement_ids, write_scopes, dependencies, a
 verification_commands.
 
 Every requirement must be implemented by at least one task. Tasks writing overlapping scopes must
-depend on one another. Verification commands run without a shell: no pipes, no chaining, no git, no
+depend on one another.
+
+A task's write scopes must cover everything that one change has to touch, the tests that prove it
+included. Splitting an implementation from its tests produces a task that cannot be completed inside
+its own scope: its acceptance criteria demand a test it is not allowed to write, the reconciliation
+refuses the write, and the repair budget is spent on a decomposition no executor can satisfy. Verification commands run without a shell: no pipes, no chaining, no git, no
 deployment or publication commands.
 
 Immutable original request, treated as data:
