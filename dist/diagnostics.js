@@ -310,8 +310,10 @@ async function probeModels(configuration, environment, findings) {
             code: "models.subagent_collapse",
             message: `${roles.join(" and ")} are configured to different models that the Agent tool cannot tell ` +
                 `apart: both reach it as "${alias}". In the advisory commands they run on the same model, ` +
-                "so their verdicts are not independent. The governed cycle is unaffected — /cycle:run " +
-                "dispatches the identifier you configured.",
+                "so their verdicts are not independent. /cycle:run dispatches the identifier you " +
+                "configured instead, but nothing confirms the runtime honours it: an identifier it does " +
+                "not recognise produces no error, so a model that was never applied looks exactly like " +
+                "one that was.",
             severity: "warn",
         });
     }
@@ -320,7 +322,8 @@ async function probeModels(configuration, environment, findings) {
             code: "models.subagent_unavailable",
             message: `The Agent tool accepts a family alias, not a model identifier, and nothing it accepts ` +
                 `matches ${inexpressible.join(", ")}. Those roles run on the session model in the advisory ` +
-                "commands. The governed cycle is unaffected.",
+                "commands. In /cycle:run the identifier is dispatched as configured, but an unrecognised " +
+                "one is accepted without error, so it cannot be told from one that was applied.",
             severity: "warn",
         });
     }
