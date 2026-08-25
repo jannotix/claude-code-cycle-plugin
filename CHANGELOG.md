@@ -3,10 +3,10 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] — 2026-08-25
 
-Version 1.0.0 is not released. Publication is blocked until the Windows and WSL certification
-matrix passes on both platforms, including the rows that can only be checked by hand.
+First release. Every certification row applicable to Windows 11 and to Ubuntu 24.04 under WSL2
+passes, including the rows that can only be checked by hand.
 
 ### Added
 
@@ -40,10 +40,14 @@ role, all on the Anthropic API:
 | arbiter | `claude-fable-5` |
 | operator | `haiku` |
 
-The two reviewers reached different verdicts on the same frozen candidate — the functional reviewer
-approved, the security reviewer refused — and the arbiter upheld the refusal. One repair cycle
-later both approved and the change was delivered. That disagreement is the reason the roles are
-separated, and it is unlikely to occur when one model fills them all.
+On Windows the two reviewers reached different verdicts on the same frozen candidate — the
+functional reviewer approved, the security reviewer refused — and the arbiter upheld the refusal.
+One repair cycle later both approved and the change was delivered, taking a fixture from one passing
+test to six. That disagreement is the reason the roles are separated, and it is unlikely to occur
+when one model fills them all.
+
+On WSL the same request was delivered without spending a repair cycle: both reviewers approved, the
+arbiter approved, and the fixture went from one passing test to eight.
 
 Scale was measured on a generated 500,000-file corpus: a first index of 1,000,000 nodes and 500,000
 edges, and a delta after one changed file that reparses exactly that file.
