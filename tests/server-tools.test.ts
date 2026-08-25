@@ -9,7 +9,7 @@ interface RoleSettings {
   readonly advisory: boolean
   readonly agent: string
   readonly effort: string
-  readonly instruction: string
+  readonly inherits: boolean
   readonly model: string | null
   readonly projectId: string
   readonly role: string
@@ -51,7 +51,7 @@ test("an unconfigured role reports inheritance rather than inventing a model", a
 
   const settings = payload<RoleSettings>(response)
   assert.equal(settings.model, null)
-  assert.match(settings.instruction, /without a model parameter/u)
+  assert.equal(settings.inherits, true)
 })
 
 // Certification 2.3, 2.4.
@@ -63,7 +63,7 @@ test("a configured role reports its model and how to pass it", async () => {
   const settings = payload<RoleSettings>(response)
   assert.equal(settings.model, "gpt-5.6-sol")
   assert.equal(settings.effort, "xhigh")
-  assert.match(settings.instruction, /"gpt-5\.6-sol"/u)
+  assert.equal(settings.inherits, false)
   // The caller is about to spend a workflow on this assignment, so it is told here and not only
   // by the doctor that no configured endpoint can answer that name.
   assert.match(settings.warning ?? "", /does not serve it/u)

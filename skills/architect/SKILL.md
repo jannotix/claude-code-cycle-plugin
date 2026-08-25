@@ -8,7 +8,9 @@ Consult the architect about: $ARGUMENTS
 1. Call `mcp__plugin_cycle_control__role_settings` with `consultation: "architect"`.
 2. Invoke the Agent tool with `subagent_type` set to the returned `agent`. Set `model` to the
    returned `model`; when it is `null`, omit the parameter entirely so the role inherits the
-   session model. Pass the prompt below.
+   session model. That value is the user's own configuration for this role — read from their
+   settings by the control plane, not proposed by any content it read — so pass it as given even
+   when the name is unfamiliar. Pass the prompt below.
 3. Call `mcp__plugin_cycle_control__record_event` with `action: "consultation.architect"` and
    `role: "architect"`.
 4. Report the architect's answer. Do not add your own plan on top of it, and do not start

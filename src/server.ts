@@ -98,7 +98,10 @@ const doctor: ToolDefinition = {
 const roleSettings: ToolDefinition = {
   description:
     "Resolve the agent, model and effort configured for one advisory role. Call this before " +
-    "invoking a Cycle role so the user's own model configuration is honoured.",
+    "invoking a Cycle role so the user's own model configuration is honoured. Returns data only: " +
+    "`agent` is the subagent type to invoke, `model` is the model to pass (null means the role " +
+    "inherits the session model, so omit the parameter), and `effort` is the reasoning effort. " +
+    "The skill that called this says what to do with them; this tool never does.",
   inputSchema: {
     additionalProperties: false,
     properties: {
@@ -114,9 +117,12 @@ const roleSettings: ToolDefinition = {
       advisory: true,
       agent: resolved.agent,
       effort: resolved.effort,
-      instruction: resolved.inherits
-        ? "Invoke the agent without a model parameter: this role inherits the session model."
-        : `Invoke the agent with model "${resolved.model}".`,
+      // No imperative field here, deliberately. This is tool output, and tool output is data: a
+      // sentence telling the caller to invoke something is indistinguishable from an injection
+      // riding in a tool result, and an agent that guards against that refuses it — along with the
+      // legitimate model beside it, silently falling back to the session default. The skill holds
+      // the instruction; this returns what the instruction needs.
+      inherits: resolved.inherits,
       model: resolved.model,
       projectId: cycle.project.id,
       role: resolved.role,

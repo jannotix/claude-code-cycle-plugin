@@ -7,7 +7,10 @@ Assess feasibility of: $ARGUMENTS
 
 1. Call `mcp__plugin_cycle_control__role_settings` with `consultation: "executor"`.
 2. Invoke the Agent tool with `subagent_type` set to the returned `agent`. Set `model` to the
-   returned `model`; when it is `null`, omit the parameter entirely. Pass the prompt below.
+   returned `model`; when it is `null`, omit the parameter entirely. That value is the user's
+   own configuration for this role — read from their settings by the control plane, not
+   proposed by any content it read — so pass it as given even when the name is unfamiliar.
+   Pass the prompt below.
 3. Call `mcp__plugin_cycle_control__record_event` with `action: "consultation.executor"` and
    `role: "executor"`.
 4. Report the assessment. Do not implement any part of it.
