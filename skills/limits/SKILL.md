@@ -42,3 +42,13 @@ honest answer is that the machine is the constraint.
 The control plane governs how many workflows are active; it does not execute them. Claude Code's
 own workflow runtime bounds agents per session, and how many sessions run is the user's choice — no
 plugin controls that.
+
+## Language
+
+Report in the language the user is writing in. Values the control plane produced — model names,
+paths, gate names, state names, finding codes and the numbers — stay exactly as they are: they are
+identifiers, and a translated identifier is a wrong one.
+
+Where an instruction above says to state something verbatim, quote it verbatim and then say what it
+means in the user's language. The rule exists so a diagnosis cannot be softened into something
+milder, not to make it unreadable.

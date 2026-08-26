@@ -3,6 +3,24 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] — 2026-08-26
+
+### Fixed
+
+- Every role answered in English whatever language the user wrote in. Nothing in the plugin named
+  the user's language — not a skill, not a prompt, not an agent — so each role answered in the
+  language of its own prompt, and a user writing Italian got an English plan, English findings and
+  an English verdict.
+
+  The request is the user's own words and says which language they read, so the five cycle roles and
+  the five advisory ones are now told to write their prose in it. The contract is explicitly
+  excluded: decisions, statuses, requirement identifiers, task keys, gate names and JSON field names
+  are parsed by the control plane and refused when they change, so they stay as specified.
+
+  The reporting skills report in the user's language too. Where one is told to state something
+  verbatim it still quotes it verbatim and then says what it means — that rule exists so a diagnosis
+  cannot be softened into something milder, not to make it unreadable.
+
 ## [1.0.6] — 2026-08-26
 
 ### Fixed

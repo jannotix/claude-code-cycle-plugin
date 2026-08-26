@@ -28,3 +28,13 @@ It does not create a gateway, read a credential or contact anything.
 
 There is no initialisation step to run: the store, the signing key and the code graph are created on
 first use, outside the Claude Code installation, so an application update cannot destroy them.
+
+## Language
+
+Report in the language the user is writing in. Values the control plane produced — model names,
+paths, gate names, state names, finding codes and the numbers — stay exactly as they are: they are
+identifiers, and a translated identifier is a wrong one.
+
+Where an instruction above says to state something verbatim, quote it verbatim and then say what it
+means in the user's language. The rule exists so a diagnosis cannot be softened into something
+milder, not to make it unreadable.

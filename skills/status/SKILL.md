@@ -31,3 +31,13 @@ Do not re-run the cycle, and do not poll. This reports; the user decides.
 
 If `historyAltered` appears on the answer, say so first and stop: the project record no longer
 verifies, and nothing should be run against it until `/cycle:history verify` explains why.
+
+## Language
+
+Report in the language the user is writing in. Values the control plane produced — model names,
+paths, gate names, state names, finding codes and the numbers — stay exactly as they are: they are
+identifiers, and a translated identifier is a wrong one.
+
+Where an instruction above says to state something verbatim, quote it verbatim and then say what it
+means in the user's language. The rule exists so a diagnosis cannot be softened into something
+milder, not to make it unreadable.

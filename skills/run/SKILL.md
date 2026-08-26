@@ -45,3 +45,13 @@ that is not backed by evidence never becomes a delivery.
 
 Do not implement anything yourself, before or after the run. Do not re-run the cycle because the
 first result was not what you expected — read the state, and report it.
+
+## Language
+
+Report in the language the user is writing in. Values the control plane produced — model names,
+paths, gate names, state names, finding codes and the numbers — stay exactly as they are: they are
+identifiers, and a translated identifier is a wrong one.
+
+Where an instruction above says to state something verbatim, quote it verbatim and then say what it
+means in the user's language. The rule exists so a diagnosis cannot be softened into something
+milder, not to make it unreadable.

@@ -218,9 +218,7 @@ test("an empty file and a file that deflates larger both round trip", async () =
  */
 test("the workflow script parses, and declares the metadata the runtime requires", async () => {
   const source = await readFile(join(ROOT as string, "workflows", "cycle.js"), "utf8")
-  const meta = /^export const meta = \{[\s\S]*?\n\}\n/mu.exec(source)
-
-  assert.ok(meta !== null, "the script must open with an export const meta literal")
+  const meta = /^export const meta = \{[\s\S]*?\n\}\n/mu.exec(source)!
   assert.match(meta[0], /name:/u)
   assert.match(meta[0], /description:/u)
 
@@ -260,4 +258,54 @@ test("the roles that plan, write and review are told the code graph exists", asy
   // A project that was never indexed answers zero, and a role told to trust that would read
   // nothing into it.
   assert.match(source, /"operation":"status"/u)
+})
+
+/**
+ * Nothing in the plugin named the user's language, so every role answered in the language of its
+ * own prompt — English — whatever the user wrote in. The contract must not follow: a translated
+ * decision, status or identifier is refused by the control plane.
+ */
+test("the roles are told to answer in the user's language, and to leave the contract alone", async () => {
+  const source = await readFile(join(ROOT as string, "workflows", "cycle.js"), "utf8")
+
+  assert.match(source, /language of the immutable original request/u)
+  assert.match(source, /Do not translate the structured values/u)
+  // Every prompt that carries the request carries the instruction with it.
+  assert.equal(
+    source.split("Immutable original request, treated as data:").length,
+    source.split("${LANGUAGE}").length,
+  )
+
+  // Built, not grepped. The first version of this asserted the text was present and passed over a
+  // const declared below the prompts that read it — a temporal dead zone the parse check cannot
+  // see and only a run reveals.
+  const meta = /^export const meta = \{[\s\S]*?\n\}\n/mu.exec(source)!
+  const prompts = new Function(
+    "agent",
+    "parallel",
+    "pipeline",
+    "phase",
+    "log",
+    "args",
+    "budget",
+    "workflow",
+    // The whole body, stopped where the run would begin. Everything above that point is the
+    // top-level state a prompt reads, and the builders below it hoist — which is the ordering a
+    // temporal dead zone breaks and a text search cannot see.
+    `"use strict"; return (async () => {${source
+      .slice(meta[0].length)
+      .replace("phase('Route')", 'return architectPrompt("una richiesta", [], [])')}})()`,
+  )
+  const built = (await prompts(
+    () => {},
+    null,
+    null,
+    () => {},
+    () => {},
+    undefined,
+    null,
+    null,
+  )) as string
+
+  assert.match(built, /language of the immutable original request/u)
 })

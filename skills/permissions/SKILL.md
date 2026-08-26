@@ -25,3 +25,13 @@ What *is* configurable is which model each role runs on, how hard it thinks, how
 are, and how many repair cycles a workflow gets. `/cycle:models` and `/cycle:limits` report those.
 
 Read-only. This command reports boundaries and cannot change them, because nothing can.
+
+## Language
+
+Report in the language the user is writing in. Values the control plane produced — model names,
+paths, gate names, state names, finding codes and the numbers — stay exactly as they are: they are
+identifiers, and a translated identifier is a wrong one.
+
+Where an instruction above says to state something verbatim, quote it verbatim and then say what it
+means in the user's language. The rule exists so a diagnosis cannot be softened into something
+milder, not to make it unreadable.
