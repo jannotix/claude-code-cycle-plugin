@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, mkdir, readFile, statfs } from "node:fs/promises";
+import { access, mkdir, readFile, stat, statfs } from "node:fs/promises";
 import { freemem } from "node:os";
 import { isAbsolute, relative } from "node:path";
 import { INHERIT, ROLES } from "./config.js";
@@ -25,6 +25,17 @@ export async function diagnose(cycle, version, environment = process.env) {
     probeIntegrity(cycle, findings);
     for (const problem of configuration.invalid) {
         findings.push({ code: "config.invalid", message: problem, severity: "error" });
+    }
+    const settingsChanged = await changedMinutesAgo(settingsPath(environment));
+    if (settingsChanged !== null && settingsChanged < runtime.startedMinutesAgo) {
+        findings.push({
+            code: "runtime.stale_configuration",
+            message: `The settings file was written ${settingsChanged} minutes ago and this server started ` +
+                `${runtime.startedMinutesAgo} minutes ago, so it is answering with the configuration as it ` +
+                "stood before that change. Reload the plugins or restart to pick it up; nothing below " +
+                "reflects the newer settings.",
+            severity: "warn",
+        });
     }
     if (configuration.delivered === 0) {
         findings.push({
@@ -142,6 +153,15 @@ function probeStore(cycle, findings) {
         mode: database.mode,
         schemaVersion: database.schemaVersion,
     };
+}
+async function changedMinutesAgo(path) {
+    try {
+        const changed = (await stat(path)).mtimeMs;
+        return Math.floor((Date.now() - changed) / 60_000);
+    }
+    catch {
+        return null;
+    }
 }
 async function probeRuntime(findings) {
     const major = Number(process.versions.node.split(".")[0]);

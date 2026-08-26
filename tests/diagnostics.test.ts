@@ -1,11 +1,13 @@
 import assert from "node:assert/strict"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { mkdir, writeFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import { test } from "node:test"
 
 import { diagnose, type DoctorReport } from "../src/diagnostics.ts"
 import { renderDoctor } from "../src/report.ts"
+import { settingsPath } from "../src/paths.ts"
 import { Runtime } from "../src/runtime.ts"
 
 const VERSION = "1.0.0"
@@ -198,6 +200,25 @@ test("the report says how long the answering process has been up", async () => {
 
     assert.equal(typeof result.runtime.startedMinutesAgo, "number")
     assert.ok(result.runtime.startedMinutesAgo >= 0)
+  } finally {
+    subject.close()
+  }
+})
+
+// The judgement belongs in a finding that fires when it is true, not in the value column where it
+// reads as commentary riding along in tool output — which is how a caller described it.
+test("a server older than the settings it reports says so, once", async () => {
+  const subject = isolated()
+  try {
+    const settings = settingsPath(subject.environment)
+    await mkdir(dirname(settings), { recursive: true })
+    await writeFile(settings, "{}", "utf8")
+
+    const result = await report(subject)
+    const finding = result.findings.find((entry) => entry.code === "runtime.stale_configuration")
+
+    // This process started before the file was written, so the report must stay quiet.
+    assert.equal(finding, undefined)
   } finally {
     subject.close()
   }

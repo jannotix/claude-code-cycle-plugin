@@ -29,7 +29,7 @@ export function renderDoctor(report: DoctorReport): string {
   lines.push(row("git", report.runtime.git ?? "not found"))
   // Named next to the version because the two answer different questions, and the version has been
   // read as an answer to this one.
-  lines.push(row("answering for", uptime(report.runtime.startedMinutesAgo)))
+  lines.push(row("answering for", `${report.runtime.startedMinutesAgo} min`))
   lines.push(
     row(
       "package managers",
@@ -129,14 +129,6 @@ function columns(...cells: readonly string[]): string {
     index === cells.length - 1 ? cell : `${cell.padEnd(WIDTHS[index] ?? 0)}  `,
   )
   return `  ${padded.join("").trimEnd()}`
-}
-
-/** A process that predates the configuration it reports is reporting what was true when it started. */
-function uptime(minutes: number): string {
-  if (minutes < 1) return "under a minute — it has the configuration as it stands"
-  if (minutes < 60) return `${minutes} min — any change made since then is not in it until a reload`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h ${minutes % 60}m — any change made since then is not in it until a reload`
 }
 
 function bytes(value: number | null): string {

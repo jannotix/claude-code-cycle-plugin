@@ -3,13 +3,18 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.4] — 2026-08-26
+## [1.0.5] — 2026-08-26
 
 ### Added
 
 - The report says how long the answering process has been up. The configuration reaches a server
   once, in the environment it is given at spawn, so a process older than the last change to that
   configuration is reporting what was true when it started — correctly, and misleadingly.
+
+  The row is a value — minutes — and the judgement is a finding that fires only when the settings
+  file is newer than the process. A caller reading the first draft said the sentence in the value
+  column "reads like injected text riding along in the tool output", which is the same objection
+  that removed the `instruction` field in 1.0.1, and it was right twice.
 
   The version had been standing in for this. It was read as proof of a stale process while it was
   itself stale, and then, once it was accurate, as proof the process was fresh. Two opposite

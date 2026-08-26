@@ -1,5 +1,5 @@
 import { constants } from "node:fs"
-import { access, mkdir, readFile, statfs } from "node:fs/promises"
+import { access, mkdir, readFile, stat, statfs } from "node:fs/promises"
 import { freemem } from "node:os"
 import { isAbsolute, relative } from "node:path"
 
@@ -100,6 +100,23 @@ export async function diagnose(
 
   for (const problem of configuration.invalid) {
     findings.push({ code: "config.invalid", message: problem, severity: "error" })
+  }
+
+  // A server holds the environment it was given at spawn, so one older than the last write to the
+  // settings file is answering with what was true then. Saying it only when it is true keeps it out
+  // of the reader's way the rest of the time, and puts a measurement where a guess has twice gone
+  // the wrong way.
+  const settingsChanged = await changedMinutesAgo(settingsPath(environment))
+  if (settingsChanged !== null && settingsChanged < runtime.startedMinutesAgo) {
+    findings.push({
+      code: "runtime.stale_configuration",
+      message:
+        `The settings file was written ${settingsChanged} minutes ago and this server started ` +
+        `${runtime.startedMinutesAgo} minutes ago, so it is answering with the configuration as it ` +
+        "stood before that change. Reload the plugins or restart to pick it up; nothing below " +
+        "reflects the newer settings.",
+      severity: "warn",
+    })
   }
 
   if (configuration.delivered === 0) {
@@ -244,6 +261,16 @@ function probeStore(cycle: Runtime, findings: Finding[]): DoctorReport["store"] 
     historyEntries: row?.entries ?? 0,
     mode: database.mode,
     schemaVersion: database.schemaVersion,
+  }
+}
+
+/** How long ago a file was last written, or null when it cannot be read. */
+async function changedMinutesAgo(path: string): Promise<number | null> {
+  try {
+    const changed = (await stat(path)).mtimeMs
+    return Math.floor((Date.now() - changed) / 60_000)
+  } catch {
+    return null
   }
 }
 

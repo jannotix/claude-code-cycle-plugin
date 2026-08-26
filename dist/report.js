@@ -19,7 +19,7 @@ export function renderDoctor(report) {
     lines.push(row("node", report.runtime.node));
     lines.push(row("platform", `${report.runtime.platform}/${report.runtime.arch}${report.runtime.wsl ? " (WSL)" : ""}`));
     lines.push(row("git", report.runtime.git ?? "not found"));
-    lines.push(row("answering for", uptime(report.runtime.startedMinutesAgo)));
+    lines.push(row("answering for", `${report.runtime.startedMinutesAgo} min`));
     lines.push(row("package managers", report.runtime.packageManagers
         .map((manager) => `${manager.name}${manager.kind === "shim" ? " (shim)" : ""}`)
         .join(", ") || "none"));
@@ -76,14 +76,6 @@ const WIDTHS = [20, 29, 6, 10];
 function columns(...cells) {
     const padded = cells.map((cell, index) => index === cells.length - 1 ? cell : `${cell.padEnd(WIDTHS[index] ?? 0)}  `);
     return `  ${padded.join("").trimEnd()}`;
-}
-function uptime(minutes) {
-    if (minutes < 1)
-        return "under a minute — it has the configuration as it stands";
-    if (minutes < 60)
-        return `${minutes} min — any change made since then is not in it until a reload`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ${minutes % 60}m — any change made since then is not in it until a reload`;
 }
 function bytes(value) {
     if (value === null)
