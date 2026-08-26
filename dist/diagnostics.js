@@ -169,6 +169,7 @@ async function probeRuntime(findings) {
     }
     return {
         arch: process.arch,
+        startedMinutesAgo: Math.floor(process.uptime() / 60),
         git: git?.version ?? null,
         node: process.versions.node,
         packageManagers,

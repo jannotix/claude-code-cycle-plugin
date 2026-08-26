@@ -59,6 +59,14 @@ export interface DoctorReport {
     readonly node: string
     readonly packageManagers: readonly PackageManager[]
     readonly platform: string
+    /**
+     * How long this server process has been answering. The configuration reaches it once, in the
+     * environment it was given at spawn, so a process older than the last change to that
+     * configuration is reporting what was true when it started. The version says which build is
+     * running and answers nothing about when — reading freshness out of it has produced the wrong
+     * conclusion in both directions.
+     */
+    readonly startedMinutesAgo: number
     readonly wsl: boolean
   }
   readonly storage: {
@@ -268,6 +276,7 @@ async function probeRuntime(findings: Finding[]): Promise<DoctorReport["runtime"
 
   return {
     arch: process.arch,
+    startedMinutesAgo: Math.floor(process.uptime() / 60),
     git: git?.version ?? null,
     node: process.versions.node,
     packageManagers,

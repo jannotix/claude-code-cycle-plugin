@@ -185,3 +185,20 @@ test("two judges whose distinct models reach one alias are reported", async () =
     subject.close()
   }
 })
+
+/**
+ * The version was read as evidence of how fresh the answering process was — first as proof it was
+ * stale, then as proof it was not, and wrong both times. It says which build is running and nothing
+ * about when. This does.
+ */
+test("the report says how long the answering process has been up", async () => {
+  const subject = isolated()
+  try {
+    const result = await report(subject)
+
+    assert.equal(typeof result.runtime.startedMinutesAgo, "number")
+    assert.ok(result.runtime.startedMinutesAgo >= 0)
+  } finally {
+    subject.close()
+  }
+})

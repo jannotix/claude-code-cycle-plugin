@@ -3,6 +3,19 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] — 2026-08-26
+
+### Added
+
+- The report says how long the answering process has been up. The configuration reaches a server
+  once, in the environment it is given at spawn, so a process older than the last change to that
+  configuration is reporting what was true when it started — correctly, and misleadingly.
+
+  The version had been standing in for this. It was read as proof of a stale process while it was
+  itself stale, and then, once it was accurate, as proof the process was fresh. Two opposite
+  conclusions from a field that answers which build is running and nothing about when. Both times
+  the reader went looking for a delivery bug on a machine where delivery was working.
+
 ## [1.0.3] — 2026-08-26
 
 ### Fixed
