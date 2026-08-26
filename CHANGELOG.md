@@ -3,6 +3,20 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] — 2026-08-26
+
+### Fixed
+
+- The code graph was built, exposed as a tool and documented, and no role was ever told it exists.
+  Nothing failed: the architect planned, the executor wrote and both reviewers judged by reading
+  files they could have asked about, and a capability that ships with twelve grammars sat
+  unreachable from inside the cycle. All four now carry the query surface, each with the question
+  its own role asks — what already exists before building it, what the paths about to be written
+  reach, what a change to the candidate breaks, and where a trust boundary actually sits.
+
+  They are told to call `status` first. A project that was never indexed answers zero, and a role
+  that trusted an empty answer would read nothing into it and call it nothing there.
+
 ## [1.0.1] — 2026-08-26
 
 ### Fixed

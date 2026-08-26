@@ -240,3 +240,24 @@ test("the workflow script parses, and declares the metadata the runtime requires
       ),
   )
 })
+
+/**
+ * The graph was built, exposed as a tool, documented in the README — and never mentioned to the
+ * roles, so every one of them read files it could have asked about. Nothing failed; the capability
+ * was simply unreachable from inside the cycle.
+ */
+test("the roles that plan, write and review are told the code graph exists", async () => {
+  const source = await readFile(join(ROOT as string, "workflows", "cycle.js"), "utf8")
+
+  for (const builder of ["architectPrompt", "executorPrompt", "reviewPrompt", "securityPrompt"]) {
+    const start = source.indexOf(`function ${builder}(`)
+    assert.ok(start > 0, `${builder} is missing`)
+    const body = source.slice(start, source.indexOf("\n}", start))
+    assert.match(body, /graphGuidance\(/u, `${builder} never mentions the graph`)
+  }
+
+  assert.match(source, /mcp__plugin_cycle_control__graph_query/u)
+  // A project that was never indexed answers zero, and a role told to trust that would read
+  // nothing into it.
+  assert.match(source, /"operation":"status"/u)
+})

@@ -470,9 +470,31 @@ async function beginRepair(previous) {
   return resumed?.state === 'execution' ? 'execution' : null
 }
 
+/**
+ * The project's own semantic graph, built locally with no model calls. The roles have the tool; what
+ * they lacked was being told it exists, so each one read files it could have asked about. `status`
+ * first, because a project that has never been indexed answers zero and the right move there is to
+ * read the repository directly rather than to trust an empty answer.
+ */
+function graphGuidance(lens) {
+  return `The project's code graph, if it has been built. Call mcp__plugin_cycle_control__graph_query
+with {"operation":"status"} first: zero files means it was never built, and you should read the
+repository directly instead of reading nothing into an empty result. Otherwise:
+
+  {"operation":"symbol","name":"X"}            where X is defined
+  {"operation":"neighbours","name":"X"}        what X calls and what calls X
+  {"operation":"impact","paths":["a/b.ts"]}    what a change to those files can reach
+  {"operation":"scope","paths":["a/b.ts"]}     a budgeted context slice for those files
+
+It is built from syntax, not from a model, and every edge carries its confidence: \`extracted\` was
+read from the tree or a resolved import, \`inferred\` matched a name with nothing to confirm it. ${lens}`
+}
+
 function architectPrompt(text, memories) {
   return `Produce the minimum complete plan for the immutable request below. Inspect the repository
 with read-only tools first, and apply the essentiality ladder to everything the request implies.
+
+${graphGuidance('Use it to find what already exists before planning to build it, and to size the write scopes a task really needs.')}
 
 This project's own memory, at the index level. A verified entry is backed by gates that actually
 passed; an inferred one is not. Call mcp__plugin_cycle_control__memory with
@@ -503,6 +525,8 @@ ${JSON.stringify(text)}`
 function securityPrompt(text, evidence, workflowId, requirements) {
   return `Independently review the frozen candidate for security and architecture. You cannot see
 the other reviewer.
+
+${graphGuidance('Ask it what reaches the changed paths and what they reach: a trust boundary is a place in that graph, not a feeling about the code.')}
 
 You may not report a vulnerability class as present unless you demonstrated it. You cannot write
 files, so send the proof's source to mcp__plugin_cycle_control__workflow:
@@ -535,6 +559,8 @@ function executorPrompt(text, task, memories, tasks) {
   const others = (tasks ?? []).filter((entry) => entry.key !== task.key)
   return `Implement exactly this one task, inside its authorized write scopes and nowhere else.
 
+${graphGuidance('Ask it for the scope of the paths you are about to write, and for what a change to them reaches, before you decide the change is contained.')}
+
 The rest of the plan, and the paths each part owns. Writing into one of them is refused and costs a
 repair cycle, however sensible the change looks: a task that leaves the work incomplete until a
 later one runs has done its job correctly. If your task needs something another one owns, say so in
@@ -565,6 +591,8 @@ Return one JSON object: {"status":"completed|blocked|plan_defect","summary":"...
 
 function reviewPrompt(text, lens, evidence, requirements) {
   return `Independently review the frozen candidate for ${lens}. You cannot see the other reviewer.
+
+${graphGuidance('Ask it what a change to the candidate paths reaches: a caller the change breaks is a regression whether or not a gate ran over it.')}
 
 Decide each of these requirement identifiers exactly once, using no others — a verdict citing an
 identifier the plan does not contain is refused:
