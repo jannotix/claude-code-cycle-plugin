@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { test } from "node:test"
 
@@ -480,4 +481,18 @@ test("indexing reports what it parsed and reparses nothing on a second pass", as
   assert.equal(second.updated, 0)
   assert.ok(second.unchanged > 0, "the second pass must recognise the files it already parsed")
   assert.equal(status.files, first.updated)
+})
+
+/**
+ * The version was a literal in server.ts and three releases bumped the manifest without it. The
+ * doctor then reported 1.0.0 while 1.0.2 was running, which was read as proof that a stale process
+ * was answering — and sent the reader hunting a configuration-delivery bug that did not exist.
+ */
+test("the version the server reports is the version the manifest declares", async () => {
+  const manifest = JSON.parse(
+    await readFile(join(import.meta.dirname, "..", ".claude-plugin", "plugin.json"), "utf8"),
+  ) as { version: string }
+  const [response] = await exchange([call(1, "doctor", {})])
+
+  assert.equal(payload<{ report: { version: string } }>(response).report.version, manifest.version)
 })

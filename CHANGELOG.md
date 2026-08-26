@@ -3,6 +3,17 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] — 2026-08-26
+
+### Fixed
+
+- The doctor reported the version from a literal in the server, and three releases bumped the
+  manifest without it. It said `Cycle 1.0.0` while 1.0.2 was running — and that was read as proof
+  that a stale process was answering, which sent the reader looking for a configuration-delivery
+  bug that did not exist. The version is now read from the manifest, and reports `unknown` rather
+  than a number it cannot confirm. A test compares the two, because the assertion that should have
+  caught this was pinned to the same stale literal.
+
 ## [1.0.2] — 2026-08-26
 
 ### Fixed

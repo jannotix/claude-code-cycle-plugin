@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+
 import { release } from "./admission.ts"
 import { ROLES, type Role } from "./config.ts"
 import { diagnose } from "./diagnostics.ts"
@@ -56,7 +59,23 @@ import {
   workflowStatus,
 } from "./workflow/service.ts"
 
-const VERSION = "1.0.0"
+/**
+ * Read from the manifest rather than written here. A literal drifts the moment a release bumps the
+ * manifest and forgets this line, and a doctor reporting a version the code is not is worse than
+ * one reporting none: it was read as proof that a stale process was answering, and sent the reader
+ * hunting a delivery bug that did not exist.
+ */
+const VERSION = manifestVersion()
+
+function manifestVersion(): string {
+  try {
+    const manifest = join(import.meta.dirname, "..", ".claude-plugin", "plugin.json")
+    const version = JSON.parse(readFileSync(manifest, "utf8")).version
+    return typeof version === "string" && version.length > 0 ? version : "unknown"
+  } catch {
+    return "unknown"
+  }
+}
 const MAX_ACTION = 128
 const MAX_METADATA_ENTRIES = 32
 const MAX_METADATA_VALUE = 4_096

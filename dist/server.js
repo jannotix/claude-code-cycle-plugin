@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { release } from "./admission.js";
 import { ROLES } from "./config.js";
 import { diagnose } from "./diagnostics.js";
@@ -18,7 +20,17 @@ import { Runtime } from "./runtime.js";
 import { graphSize } from "./store/graph.js";
 import { appendHistory } from "./store/history.js";
 import { arbitrate, candidateEvidence, exportState, control, deliverCandidate, historyState, mandatoryGatesPassed, recallForRequest, reconcile, freezeCandidate, reportTask, startWorkflow, submitPlan, submitBrowserEvidence, submitReviewVerdict, submitSecurityProof, verificationInputs, verifyCandidate, workflowStatus, } from "./workflow/service.js";
-const VERSION = "1.0.0";
+const VERSION = manifestVersion();
+function manifestVersion() {
+    try {
+        const manifest = join(import.meta.dirname, "..", ".claude-plugin", "plugin.json");
+        const version = JSON.parse(readFileSync(manifest, "utf8")).version;
+        return typeof version === "string" && version.length > 0 ? version : "unknown";
+    }
+    catch {
+        return "unknown";
+    }
+}
 const MAX_ACTION = 128;
 const MAX_METADATA_ENTRIES = 32;
 const MAX_METADATA_VALUE = 4_096;

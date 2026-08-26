@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "cycle",
   "displayName": "Cycle",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Evidence-gated delivery: an architect, an executor, two independent reviewers and an independent arbiter that judges against your original request.",
   "author": {
     "name": "Gianluca Iannotta",

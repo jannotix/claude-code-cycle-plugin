@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { test } from "node:test"
 
 import { CURRENT_SCHEMA_VERSION } from "../src/store/migrations.ts"
@@ -60,7 +62,12 @@ test("doctor returns a structured report and a rendered summary", async () => {
 
   assert.equal(result.report.runtime.node, process.versions.node)
   assert.equal(result.report.store.schemaVersion, CURRENT_SCHEMA_VERSION)
-  assert.ok(result.summary.includes("Cycle 1.0.0"))
+  // Read, not written: the literal that used to sit here went stale across three releases while
+  // the assertion kept passing.
+  const manifest = JSON.parse(
+    await readFile(join(import.meta.dirname, "..", ".claude-plugin", "plugin.json"), "utf8"),
+  ) as { version: string }
+  assert.ok(result.summary.includes(`Cycle ${manifest.version}`))
   assert.ok(result.report.findings.length > 0)
 })
 
