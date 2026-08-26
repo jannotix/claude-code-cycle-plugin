@@ -429,7 +429,7 @@ async function probeModels(
     "security_reviewer",
     "arbiter",
   ]
-  const collapsed = new Map<string, Role[]>()
+  const collapsed = new Map<string, { model: string; role: Role }[]>()
   const inexpressible: string[] = []
   for (const role of advisory) {
     const model = configuration.roles[role].model
@@ -439,20 +439,29 @@ async function probeModels(
       inexpressible.push(`${role} (${model})`)
       continue
     }
-    collapsed.set(alias, [...(collapsed.get(alias) ?? []), role])
+    collapsed.set(alias, [...(collapsed.get(alias) ?? []), { model, role }])
   }
 
-  for (const [alias, roles] of collapsed) {
-    if (roles.length < 2) continue
+  // Two roles set to the same model is a decision, not a surprise, and saying otherwise trains the
+  // reader to skip warnings. What is worth saying is that two models chosen to differ arrive as one.
+  const JUDGES: readonly Role[] = ["arbiter", "functional_reviewer", "security_reviewer"]
+  for (const [alias, entries] of collapsed) {
+    if (new Set(entries.map((entry) => entry.model)).size < 2) continue
+    const roles = entries.map((entry) => entry.role)
+    const judging = roles.filter((role) => JUDGES.includes(role))
     findings.push({
       code: "models.subagent_collapse",
       message:
         `${listed(roles)} are configured to different models that the Agent tool cannot tell ` +
-        `apart: each reaches it as "${alias}". In the advisory commands they run on the same model, ` +
-        "so their verdicts are not independent. /cycle:run dispatches the identifier you " +
-        "configured instead, but nothing confirms the runtime honours it: an identifier it does " +
-        "not recognise produces no error, so a model that was never applied looks exactly like " +
-        "one that was.",
+        `apart: each reaches it as "${alias}". ` +
+        (judging.length > 1
+          ? `In the advisory commands ${listed(judging)} therefore return verdicts from one model, ` +
+            "not from the separate ones the configuration names. "
+          : "In the advisory commands they run on one model rather than the separate ones " +
+            "configured. ") +
+        "/cycle:run dispatches the identifier you configured instead, but nothing confirms the " +
+        "runtime honours it: an identifier it does not recognise produces no error, so a model " +
+        "that was never applied looks exactly like one that was.",
       severity: "warn",
     })
   }

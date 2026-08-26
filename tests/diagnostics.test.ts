@@ -149,3 +149,39 @@ test("a gateway with every role on one path is reported as no independence", asy
     subject.close()
   }
 })
+
+// Two roles set to the same model is a decision. Warning about it trains the reader to skip
+// warnings, and the one that matters — two models chosen to differ arriving as one — goes with it.
+test("roles deliberately sharing one model are not reported as a collapse", async () => {
+  const subject = isolated({
+    ARBITER_MODEL: "claude-fable-5",
+    ARCHITECT_MODEL: "claude-opus-5",
+    EXECUTOR_MODEL: "claude-sonnet-5",
+    FUNCTIONAL_REVIEWER_MODEL: "claude-sonnet-5",
+    SECURITY_REVIEWER_MODEL: "claude-opus-5",
+  })
+  try {
+    const result = await report(subject)
+
+    assert.ok(!codes(result).includes("models.subagent_collapse"))
+  } finally {
+    subject.close()
+  }
+})
+
+test("two judges whose distinct models reach one alias are reported", async () => {
+  const subject = isolated({
+    ARBITER_MODEL: "claude-fable-5",
+    FUNCTIONAL_REVIEWER_MODEL: "claude-opus-4-7",
+    SECURITY_REVIEWER_MODEL: "claude-opus-4-8",
+  })
+  try {
+    const result = await report(subject)
+    const finding = result.findings.find((entry) => entry.code === "models.subagent_collapse")
+
+    assert.ok(finding !== undefined)
+    assert.match(finding.message, /return verdicts from one model/u)
+  } finally {
+    subject.close()
+  }
+})
