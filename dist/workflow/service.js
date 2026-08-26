@@ -11,7 +11,7 @@ import { latestCheckpoint, signCheckpoint, verifyCheckpoints } from "../store/ch
 import { appendHistory, lastEvent, readHistory, verifyHistory } from "../store/history.js";
 import { goalOfWorkflow } from "../store/goals.js";
 import { newId } from "../store/ids.js";
-import { activeWorkflowForRequest, candidateManifest, createWorkflow, frozenFiles, latestWorkflow, loadPlan, loadRequest, loadReviews, loadTasks, loadWorkflow, recordArbitration, recordCandidate, requestDigestOf, saveWorkflow, savePlan, setTaskState, submitReview, } from "../store/workflows.js";
+import { activeWorkflowForRequest, candidateManifest, createWorkflow, frozenFiles, lastRefusal, latestWorkflow, loadPlan, loadRequest, loadReviews, loadTasks, loadWorkflow, recordArbitration, recordCandidate, requestDigestOf, saveWorkflow, savePlan, setTaskState, submitReview, } from "../store/workflows.js";
 import { apply, isTerminal, TransitionError } from "./machine.js";
 import { parsePlan } from "./plan.js";
 import { route } from "./routing.js";
@@ -73,6 +73,7 @@ export function workflowStatus(context, workflowId) {
     const request = loadRequest(context.database, workflow.id);
     return {
         found: true,
+        lastRefusal: lastRefusal(context.database, workflow.id),
         mode: workflow.mode,
         originalRequest: request?.originalText ?? null,
         pausedBecause: pausedBecause(context, workflow),

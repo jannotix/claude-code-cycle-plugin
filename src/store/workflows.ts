@@ -345,6 +345,36 @@ export function loadReviews(
     }))
 }
 
+/**
+ * What the last refusal actually said, so the role about to repair is told rather than left to
+ * rediscover it. Keyed by workflow rather than by candidate, because `begin_repair` clears the
+ * candidate: the findings belong to the candidate that was refused, and the repair happens after it
+ * is gone. Reviews that approved are omitted — an approval names nothing to fix.
+ */
+export function lastRefusal(
+  database: Database,
+  workflowId: string,
+): { findings: readonly unknown[]; from: string }[] {
+  const arbitration = database.get<Row>(
+    `select candidate_id, verdict from arbitrations
+      where workflow_id = ? and decision = 'rejected'
+      order by finalized_at desc limit 1`,
+    workflowId,
+  )
+  if (arbitration === undefined) return []
+
+  const candidateId = String(arbitration["candidate_id"])
+  const refusals: { findings: readonly unknown[]; from: string }[] = []
+  for (const review of loadReviews(database, candidateId)) {
+    if (review.verdict.decision !== "rejected") continue
+    refusals.push({ findings: review.verdict.findings ?? [], from: review.role })
+  }
+
+  const verdict = JSON.parse(String(arbitration["verdict"])) as Verdict
+  refusals.push({ findings: verdict.findings ?? [], from: "arbiter" })
+  return refusals.filter((refusal) => refusal.findings.length > 0)
+}
+
 export function recordArbitration(
   database: Database,
   workflowId: string,

@@ -3,6 +3,25 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] — 2026-08-26
+
+### Fixed
+
+- A repair was never told what was wrong with the candidate it was repairing. The reviewers wrote
+  findings, the control plane refused delivery over them — it refuses an approval outright while a
+  reviewer has rejected — and then the workflow returned to execution and dispatched the executor
+  with a prompt identical to its first attempt. The architect replanned the same way. Every repair
+  cycle rediscovered the finding or missed it, and the budget paid for the rediscovery.
+
+  `status` now carries what the last refusal said, by the role that said it, and both the executor
+  and the architect receive it. Reviews that approved are left out: an approval names nothing to
+  fix. It is handed over as data to address, not as instructions to follow, and a finding outside a
+  task's write scopes still belongs to whichever task owns those paths.
+
+  The arbiter still does not see the reviews. That is deliberate — its prompt says the original
+  request is authoritative, "not the plan, not either review" — and the reviewers' veto is enforced
+  by the control plane rather than by its deference.
+
 ## [1.0.5] — 2026-08-26
 
 ### Added

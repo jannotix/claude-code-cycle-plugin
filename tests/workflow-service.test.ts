@@ -954,3 +954,52 @@ test("a readiness assessment has no workflow to approve, and approval refuses wi
     close()
   }
 })
+
+/**
+ * The reviewers wrote down exactly what was wrong, the plane refused delivery over it, and nobody
+ * repairing was ever told. Each repair cycle rediscovered the finding or missed it, and the budget
+ * paid for the rediscovery.
+ */
+test("what the last refusal said is carried back for the repair", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "expose health", ["src/health"], "full") as {
+      workflowId: string
+    }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    freezeCandidate(ctx, id, emptyCandidate())
+    verifyCandidate(ctx, id, { evidenceIds: ["e1"], mandatoryPassed: true, reason: "" })
+
+    submitReviewVerdict(ctx, id, "functional_reviewer", APPROVAL)
+    submitReviewVerdict(ctx, id, "security_reviewer", REJECTION)
+    arbitrate(ctx, id, REJECTION, true)
+
+    const status = workflowStatus(ctx, id) as {
+      lastRefusal: { findings: { summary: string }[]; from: string }[]
+    }
+
+    // The reviewer that approved names nothing to fix and is left out.
+    assert.deepEqual(
+      status.lastRefusal.map((refusal) => refusal.from),
+      ["security_reviewer", "arbiter"],
+    )
+    assert.match(status.lastRefusal[0]!.findings[0]!.summary, /no test covers the flow/u)
+  } finally {
+    close()
+  }
+})
+
+test("a workflow that has never been refused carries nothing", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "expose health", ["src/health"], "full") as {
+      workflowId: string
+    }
+
+    assert.deepEqual((workflowStatus(ctx, started.workflowId) as { lastRefusal: [] }).lastRefusal, [])
+  } finally {
+    close()
+  }
+})

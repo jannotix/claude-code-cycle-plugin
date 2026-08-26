@@ -25,6 +25,7 @@ import {
   candidateManifest,
   createWorkflow,
   frozenFiles,
+  lastRefusal,
   latestWorkflow,
   loadPlan,
   loadRequest,
@@ -135,6 +136,9 @@ export function workflowStatus(context: ServiceContext, workflowId?: string): un
   const request = loadRequest(context.database, workflow.id)
   return {
     found: true,
+    // What the last refusal said, carried so a repair is aimed rather than blind. Empty until
+    // something has actually been refused.
+    lastRefusal: lastRefusal(context.database, workflow.id),
     mode: workflow.mode,
     originalRequest: request?.originalText ?? null,
     pausedBecause: pausedBecause(context, workflow),

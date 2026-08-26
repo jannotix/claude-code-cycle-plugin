@@ -145,6 +145,23 @@ export function loadReviews(database, candidateId) {
         verdict: JSON.parse(String(row["verdict"])),
     }));
 }
+export function lastRefusal(database, workflowId) {
+    const arbitration = database.get(`select candidate_id, verdict from arbitrations
+      where workflow_id = ? and decision = 'rejected'
+      order by finalized_at desc limit 1`, workflowId);
+    if (arbitration === undefined)
+        return [];
+    const candidateId = String(arbitration["candidate_id"]);
+    const refusals = [];
+    for (const review of loadReviews(database, candidateId)) {
+        if (review.verdict.decision !== "rejected")
+            continue;
+        refusals.push({ findings: review.verdict.findings ?? [], from: review.role });
+    }
+    const verdict = JSON.parse(String(arbitration["verdict"]));
+    refusals.push({ findings: verdict.findings ?? [], from: "arbiter" });
+    return refusals.filter((refusal) => refusal.findings.length > 0);
+}
 export function recordArbitration(database, workflowId, candidateId, verdict, now) {
     const receiptDigest = digest(DIGEST_DOMAIN.verdict, { candidateId, verdict, workflowId });
     database.run(`insert into arbitrations (
