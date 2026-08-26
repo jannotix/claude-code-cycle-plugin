@@ -70,8 +70,11 @@ function given(value) {
 }
 
 const input = given(args)
-const models = input.models ?? {}
-const efforts = input.efforts ?? {}
+let models = input.models ?? {}
+let efforts = input.efforts ?? {}
+
+/** The names roles are dispatched by, which are the agent names and not the stored role names. */
+const ROLE_NAMES = ['architect', 'executor', 'functional-reviewer', 'security-reviewer', 'arbiter', 'operator']
 const request = input.request ?? ''
 const preference = input.preference ?? 'auto'
 
@@ -278,6 +281,23 @@ const id = started.workflowId
 confirmable = id
 const full = started.mode === 'full'
 log(`workflow ${id} · ${started.mode} route`)
+
+// The plane holds the role configuration, so the plane states it. Depending on the caller to have
+// assembled the map is how five configured models became one: an absent map is indistinguishable
+// from a user who chose to inherit, so every role quietly ran on the session model and nothing
+// anywhere said so. The configuration fills what the caller left unsaid; a caller that names a
+// model for a role still gets it, which is what keeps a deliberate one-off possible.
+if (started.roles) {
+  const configuredModels = {}
+  const configuredEfforts = {}
+  for (const [name, setting] of Object.entries(started.roles)) {
+    if (setting.model) configuredModels[name] = setting.model
+    if (setting.effort) configuredEfforts[name] = setting.effort
+  }
+  models = { ...configuredModels, ...models }
+  efforts = { ...configuredEfforts, ...efforts }
+}
+log(`roles — ${ROLE_NAMES.map((name) => `${name}: ${models[name] ?? 'inherited'}`).join(', ')}`)
 
 // What this project already learned, at the compact level. The architect decides what to read
 // in full; handing it every detail up front would cost more than the plan is worth.

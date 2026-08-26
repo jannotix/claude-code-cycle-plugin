@@ -1,3 +1,4 @@
+import { readConfiguration } from "../src/config.ts"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -58,7 +59,7 @@ function fixture(baseline: Record<string, string> = { "README.md": "# fixture\n"
       rmSync(root, { force: true, recursive: true })
       rmSync(data, { force: true, recursive: true })
     },
-    ctx: { database, dataDirectory: data, maxRepairCycles: 5, projectId: "p1" },
+    ctx: { configuration: readConfiguration({}), database, dataDirectory: data, maxRepairCycles: 5, projectId: "p1" },
     root,
     write,
   }

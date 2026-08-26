@@ -493,6 +493,7 @@ const workflowTool = {
     name: "workflow",
     async run(args) {
         const context = {
+            configuration: cycle.configuration,
             database: cycle.requireStore(),
             dataDirectory: cycle.dataDirectory,
             maxRepairCycles: cycle.configuration.maxRepairCycles,

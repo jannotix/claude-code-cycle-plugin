@@ -8,23 +8,22 @@ Run the cycle for: $ARGUMENTS
 1. Take the user's request **verbatim**. If `$ARGUMENTS` is empty, use their most recent message
    word for word. Never paraphrase, summarise or tidy it: the arbiter judges the delivered work
    against this exact text, and every word you change is a requirement you silently rewrote.
-2. Call `mcp__plugin_cycle_control__role_settings` once per role — `architect`, `executor`,
-   `review`, `security`, `judge` — and build the model map. Omit any role whose `model` is null.
-3. Run the `/cycle:run` workflow, passing `args`:
+2. Run the `/cycle:run` workflow, passing `args`:
 
 ```json
 {
   "request": "<the exact text>",
-  "preference": "auto",
-  "models": { "architect": "...", "executor": "...", "functional-reviewer": "...", "security-reviewer": "...", "arbiter": "...", "operator": "..." },
-  "efforts": { "architect": "...", "executor": "...", "functional-reviewer": "...", "security-reviewer": "...", "arbiter": "..." }
+  "preference": "auto"
 }
 ```
+
+The run resolves each role's model and effort from the configuration itself. Do not assemble a
+model map: it has no effect, and a partial one is worse than none.
 
 Use `preference: "quick"` only if the user explicitly asked for the quick route, `"full"` if they
 asked for the full one, otherwise `"auto"` and let the routing decide.
 
-4. Report the returned state once, and stop. The run continues in the background; do not poll it.
+3. Report the returned state once, and stop. The run continues in the background; do not poll it.
    `/cycle:status` reports progress when the user asks.
 
 ## What the states mean

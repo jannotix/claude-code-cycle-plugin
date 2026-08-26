@@ -1,3 +1,4 @@
+import { readConfiguration } from "../src/config.ts"
 import assert from "node:assert/strict"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -85,7 +86,7 @@ function context(): { close: () => void; ctx: ServiceContext } {
       database.close()
       rmSync(directory, { force: true, recursive: true })
     },
-    ctx: { database, dataDirectory: directory, maxRepairCycles: 5, projectId: "p1" },
+    ctx: { configuration: readConfiguration({}), database, dataDirectory: directory, maxRepairCycles: 5, projectId: "p1" },
   }
 }
 
@@ -999,6 +1000,41 @@ test("a workflow that has never been refused carries nothing", () => {
     }
 
     assert.deepEqual((workflowStatus(ctx, started.workflowId) as { lastRefusal: [] }).lastRefusal, [])
+  } finally {
+    close()
+  }
+})
+
+// Every role ran on the session model for as long as this went untested. The run took its models
+// from a map the caller was told to assemble, and a caller that skipped that step produced a run
+// which looked correct and used one model throughout. The plane holds the configuration, so it
+// states it.
+test("start states the model each role runs on", () => {
+  const { close, ctx } = context()
+  try {
+    const configured = {
+      ...ctx.configuration,
+      roles: {
+        ...ctx.configuration.roles,
+        architect: { effort: "high", model: "claude-opus-5" },
+        executor: { effort: "medium", model: "claude-sonnet-5" },
+      },
+    }
+    const started = startWorkflow(
+      { ...ctx, configuration: configured as typeof ctx.configuration },
+      "rename a local variable",
+      [],
+      "quick",
+    ) as { roles: Record<string, { model: string | null; subagentModel: string | null }> }
+    const role = (name: string) => started.roles[name] ?? assert.fail(`${name} is not reported`)
+
+    assert.equal(role("architect").model, "claude-opus-5")
+    assert.equal(role("executor").model, "claude-sonnet-5")
+    // Carried for the advisory commands, which dispatch through a tool that takes a family rather
+    // than an identifier. The governed run uses the identifier and reaches a third-party model.
+    assert.equal(role("architect").subagentModel, "opus")
+    assert.equal(role("executor").subagentModel, "sonnet")
+    assert.equal(role("functional-reviewer").subagentModel, null)
   } finally {
     close()
   }

@@ -14,6 +14,8 @@ Report workflow state: $ARGUMENTS
    - **`repair`** — cycles used of the budget
    - **`tasks`** — how many are completed of how many, and the key of the first that is not
    - whether a candidate is frozen
+   - **`roles`** — only when asked which models the run uses. Report each role's `model`, and say
+     a role whose `model` is null runs on the session model.
 
 Do not re-run the cycle, and do not poll. This reports; the user decides.
 

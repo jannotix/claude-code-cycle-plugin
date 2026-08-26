@@ -1,4 +1,6 @@
 import { release } from "../admission.ts"
+import { ROLES, type Configuration } from "../config.ts"
+import { resolveRole } from "../roles.ts"
 import { advanceGoalOfWorkflow, linkStartedWorkflow } from "../goals.ts"
 import { captureBlocked, captureDelivery, recall } from "../memory.ts"
 import { parseSnapshot } from "../evidence/accessibility.ts"
@@ -48,6 +50,8 @@ import { insideAny } from "./scopes.ts"
 import { parseVerdict, type Verdict } from "./verdicts.ts"
 
 export interface ServiceContext {
+  /** Carried so `start` can state the per-role configuration rather than be told it. */
+  readonly configuration: Configuration
   readonly database: Database
   readonly dataDirectory: string
   readonly maxRepairCycles: number
@@ -59,6 +63,41 @@ export class WorkflowError extends Error {
     super(message)
     this.name = "WorkflowError"
   }
+}
+
+/**
+ * The per-role configuration, returned by `start` so the run never depends on its caller having
+ * assembled it. The skill is told to call `role_settings` once per role and pass a map; when that
+ * preamble is skipped the map arrives empty, every role inherits the session model, and nothing
+ * anywhere says so — the product's central promise fails silently. The plane holds the
+ * configuration, so the plane states it.
+ */
+function roleModels(configuration: Configuration): Record<string, WorkflowRoleSetting> {
+  const roles: Record<string, WorkflowRoleSetting> = {}
+  for (const role of ROLES) {
+    const resolved = resolveRole(configuration, role)
+    roles[WORKFLOW_ROLE_NAME[role] ?? role] = {
+      effort: resolved.effort,
+      model: resolved.model,
+      // The workflow runtime dispatches on the identifier as configured, which is what keeps a
+      // third-party model reachable at all. The family is carried for the advisory commands,
+      // which dispatch through a tool that accepts nothing else.
+      subagentModel: resolved.subagentModel,
+    }
+  }
+  return roles
+}
+
+export interface WorkflowRoleSetting {
+  readonly effort: string
+  readonly model: string | null
+  readonly subagentModel: string | null
+}
+
+/** The names the workflow script dispatches by, which differ from the stored role names. */
+const WORKFLOW_ROLE_NAME: Readonly<Record<string, string>> = {
+  functional_reviewer: "functional-reviewer",
+  security_reviewer: "security-reviewer",
 }
 
 export function startWorkflow(
@@ -88,6 +127,7 @@ export function startWorkflow(
       rationale: decision.rationale,
       requestDigest: requestDigestOf(text),
       resumed: true,
+      roles: roleModels(context.configuration),
       state: existing.state,
       workflowId: existing.id,
     }
@@ -121,6 +161,7 @@ export function startWorkflow(
     rationale: decision.rationale,
     requestDigest,
     resumed: false,
+    roles: roleModels(context.configuration),
     state: workflow.state,
     workflowId: id,
   }
@@ -144,6 +185,9 @@ export function workflowStatus(context: ServiceContext, workflowId?: string): un
     pausedBecause: pausedBecause(context, workflow),
     repair: { max: workflow.maxRepairCycles, used: workflow.repairCycles },
     requestDigest: request?.digest ?? null,
+    // Which model each role is set to run on, so "were my models used" is a question the plane
+    // answers rather than one the user has to reconstruct from a transcript.
+    roles: roleModels(context.configuration),
     state: workflow.state,
     tasks: loadTasks(context.database, workflow.id).map((task) => ({
       key: task.key,

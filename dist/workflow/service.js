@@ -1,4 +1,6 @@
 import { release } from "../admission.js";
+import { ROLES } from "../config.js";
+import { resolveRole } from "../roles.js";
 import { advanceGoalOfWorkflow, linkStartedWorkflow } from "../goals.js";
 import { captureBlocked, captureDelivery, recall } from "../memory.js";
 import { parseSnapshot } from "../evidence/accessibility.js";
@@ -23,6 +25,22 @@ export class WorkflowError extends Error {
         this.name = "WorkflowError";
     }
 }
+function roleModels(configuration) {
+    const roles = {};
+    for (const role of ROLES) {
+        const resolved = resolveRole(configuration, role);
+        roles[WORKFLOW_ROLE_NAME[role] ?? role] = {
+            effort: resolved.effort,
+            model: resolved.model,
+            subagentModel: resolved.subagentModel,
+        };
+    }
+    return roles;
+}
+const WORKFLOW_ROLE_NAME = {
+    functional_reviewer: "functional-reviewer",
+    security_reviewer: "security-reviewer",
+};
 export function startWorkflow(context, request, affectedPaths, preference, now = Date.now()) {
     const text = request.trim();
     if (!text)
@@ -37,6 +55,7 @@ export function startWorkflow(context, request, affectedPaths, preference, now =
             rationale: decision.rationale,
             requestDigest: requestDigestOf(text),
             resumed: true,
+            roles: roleModels(context.configuration),
             state: existing.state,
             workflowId: existing.id,
         };
@@ -60,6 +79,7 @@ export function startWorkflow(context, request, affectedPaths, preference, now =
         rationale: decision.rationale,
         requestDigest,
         resumed: false,
+        roles: roleModels(context.configuration),
         state: workflow.state,
         workflowId: id,
     };
@@ -79,6 +99,7 @@ export function workflowStatus(context, workflowId) {
         pausedBecause: pausedBecause(context, workflow),
         repair: { max: workflow.maxRepairCycles, used: workflow.repairCycles },
         requestDigest: request?.digest ?? null,
+        roles: roleModels(context.configuration),
         state: workflow.state,
         tasks: loadTasks(context.database, workflow.id).map((task) => ({
             key: task.key,

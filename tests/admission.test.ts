@@ -18,6 +18,7 @@ import {
   pressure,
   type ResourceReading,
 } from "../src/resources.ts"
+import { readConfiguration } from "../src/config.ts"
 import { Database } from "../src/store/database.ts"
 import { control, startWorkflow } from "../src/workflow/service.ts"
 
@@ -356,6 +357,7 @@ test("a workflow that stops holds no slot", async () => {
   const { close, controller, database } = fixture({ maxActive: 1 })
   try {
     const context = {
+      configuration: readConfiguration({}),
       database,
       dataDirectory: mkdtempSync(join(tmpdir(), "cycle-admission-")),
       maxRepairCycles: 5,
