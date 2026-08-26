@@ -329,3 +329,18 @@ test("a proven high finding still blocks an approval", () => {
     /critical or high finding/u,
   )
 })
+
+// Routing ran on English keywords and on a path list no caller ever supplied, so a payments change
+// described in any other language, or a migration named in the request itself, took the quick route
+// with no independent review and nothing anywhere saying a guard had been skipped.
+test("a critical signal is read in the language the request was written in", () => {
+  assert.deepEqual(route("aggiungi il pagamento con Stripe", [], "auto").critical, ["payments"])
+  assert.deepEqual(route("corrige la autenticacion del usuario", [], "auto").critical, ["authentication"])
+  assert.equal(route("update the readme typo", [], "auto").mode, "quick")
+})
+
+test("a path named in the request is routed on", () => {
+  assert.deepEqual(route("apply db/migrations/003_users.sql", [], "auto").critical, ["persistence"])
+  assert.deepEqual(route("bump package.json", [], "auto").critical, ["dependencies"])
+  assert.equal(route("rename the local variable", [], "auto").mode, "quick")
+})
