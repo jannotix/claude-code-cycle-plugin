@@ -21,7 +21,13 @@ Cycle runs entirely on the machine it is installed on.
 - **State.** Workflow state, history, memory and the code index are written under the plugin data
   directory, never inside the Claude Code installation.
 - **Execution.** Verification gates run without a shell, from an argument vector, against an
-  allowlist. Security proofs run in a disposable copy with the network denied except loopback.
+  allowlist. Security proofs are off unless the user turns them on, because a proof runs code the
+  reviewer wrote with this account's privileges and no operating-system sandbox. What containment
+  there is, stated exactly: a disposable copy deleted afterwards, a hard timeout, an environment
+  reduced to what an interpreter needs to start, output redacted for secret shapes, and proxy
+  variables that deny the network to every client honouring them. A proof opening a raw socket
+  still reaches the network, and a proof can read any path this account can read. Enable them only
+  where that is acceptable.
 
 ## Trust boundaries
 
@@ -35,4 +41,4 @@ before it reaches memory.
 
 ## Supported versions
 
-Version 1.0.0 is the current release. The current minor version receives security fixes.
+Version 1.0.10 is the current release. The current minor version receives security fixes.

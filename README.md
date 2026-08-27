@@ -52,10 +52,13 @@ visibility, keyboard reachability, motion, breakpoints, element nesting, missing
 the accessibility tree of the flow that was actually driven. No model is involved, so they cost
 nothing and say the same thing twice in a row.
 
-A security reviewer cannot report a vulnerability it did not demonstrate. It writes a proof, the
-control plane runs it against a disposable copy of the candidate with no network and a hard timeout,
-and the copy is deleted. A proof that works is recorded as a failing gate, and no approval by
-anybody can deliver past it. A suspicion nobody proved is recorded as a suspicion.
+A security reviewer cannot report a vulnerability it did not demonstrate. Where the user has enabled
+proofs, it writes one and the control plane runs it against a disposable copy of the candidate under
+a hard timeout, then deletes the copy. A proof that works is recorded as a failing gate, and no
+approval by anybody can deliver past it. A suspicion nobody proved is recorded as a suspicion, which
+is also what happens with proofs left off — they are off by default, because a proof executes code
+with your privileges and no operating-system sandbox. `SECURITY.md` says exactly what containment
+there is and what it does not cover.
 
 ## What is delivered
 
