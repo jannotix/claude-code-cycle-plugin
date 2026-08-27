@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "cycle",
   "displayName": "Cycle",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Evidence-gated delivery: an architect, an executor, two independent reviewers and an independent arbiter that judges against your original request.",
   "author": {
     "name": "Gianluca Iannotta",
@@ -86,6 +86,12 @@
       "default": 5,
       "min": 1,
       "max": 20
+    },
+    "security_proofs": {
+      "type": "string",
+      "title": "Execute security proofs",
+      "description": "off keeps proofs disabled: the security reviewer states a vulnerability in the review instead of running code to show it, and an undemonstrated critical is downgraded rather than discarded. on lets the reviewer execute a proof it writes against a throwaway copy of the candidate, with this account's privileges and no operating-system sandbox.",
+      "default": "off"
     },
     "gate_strictness": {
       "type": "string",
