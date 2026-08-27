@@ -3,6 +3,63 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] — 2026-08-27
+
+### Fixed
+
+- The interface layer's proof could be supplied by anyone who said they were a reviewer. The role
+  was read from the submission's own arguments, and over stdio the control plane has no notion of
+  who is calling, so the party a gate exists to check could clear it by naming a role it did not
+  hold. Freezing a candidate now mints one single-use secret per reviewing role; the run hands each
+  to that role alone, and the plane reads the role from the secret that was spent. A submission
+  without one is recorded as a self-report and carries no weight.
+- The published tool schema declared `additionalProperties: false` while the handler read a
+  property the schema did not list, so a client validating strictly would have rejected the call
+  the fix depended on.
+
+### Changed
+
+- `SECURITY.md` and `README.md` stated that security proofs run with the network denied. Environment
+  variables deny it to every client that honours them and to nothing else, and there is no
+  operating-system sandbox. Both now say what containment exists and what it does not cover.
+
+## [1.0.9] — 2026-08-27
+
+### Fixed
+
+- A candidate could be delivered onto a base revision it was never judged against. Promotion
+  compared the working tree alone, so a commit landing between approval and promotion left every
+  file identical while moving the base, and the delivered commit's `Base-revision` trailer then
+  named a revision that was not its parent.
+- A file above the hashing cap was recorded with no digest, and the integrity gate compared two
+  absent digests and called them a match. Hashing streams now, so size no longer leaves a candidate
+  file unbound to its bytes.
+- The secret scanner counted files it had skipped among the files it reported as scanned.
+- A transient git failure was read as an empty change set, so a task with writes outside its
+  authorized scopes could report as completed with the scope reconciliation never running.
+- The executor's own browser capture satisfied the interface layer it was supposed to prove.
+
+### Added
+
+- `security_proofs`, off by default. A proof executes code with this account's privileges and no
+  operating-system sandbox, so it is enabled deliberately rather than acquired by installing a
+  plugin. With it off an undemonstrated critical is downgraded, as the gate rules already provided.
+- A proof's environment is reduced to what an interpreter needs to start, and its output is redacted
+  for secret shapes before it is recorded or returned.
+
+## [1.0.8] — 2026-08-26
+
+### Fixed
+
+- No role ran on its configured model. The run took them from an argument the launching skill was
+  told to assemble, and an absent map was indistinguishable from a user choosing to inherit, so
+  every role silently used the session model. `start` now states each role's model and effort, and
+  the run resolves from that answer.
+- Routing scored paths against a list no caller ever supplied, so the migration, packaging,
+  deployment, dependency and CI rules could never fire. Paths named in the request are read now.
+- Critical markers were English only, so a payment or authentication change described in another
+  language took the quick route with no independent review.
+
 ## [1.0.7] — 2026-08-26
 
 ### Fixed

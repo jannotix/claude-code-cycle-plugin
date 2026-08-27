@@ -1,6 +1,6 @@
 {
   "name": "cycle-control-plane",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "private": true,
   "type": "module",
   "description": "Control plane for the Cycle plugin. No runtime dependencies.",
