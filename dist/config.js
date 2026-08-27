@@ -37,7 +37,7 @@ const PREFIX = "CLAUDE_PLUGIN_OPTION_";
 export function readConfiguration(environment = process.env) {
     const invalid = [];
     const roles = {};
-    const known = new Set(["DATA_DIR", "GATE_STRICTNESS", "MAX_REPAIR_CYCLES"]);
+    const known = new Set(["DATA_DIR", "GATE_STRICTNESS", "MAX_REPAIR_CYCLES", "SECURITY_PROOFS"]);
     for (const role of ROLES) {
         const modelKey = `${role.toUpperCase()}_MODEL`;
         known.add(modelKey).add(EFFORT_OPTION[role]);
@@ -54,11 +54,21 @@ export function readConfiguration(environment = process.env) {
         invalid,
         maxRepairCycles: readRepairCycles(environment, invalid),
         roles,
+        securityProofs: readSecurityProofs(environment, invalid),
         unknown: Object.keys(environment)
             .filter((key) => key.startsWith(PREFIX) && !known.has(key.slice(PREFIX.length)))
             .map((key) => key.slice(PREFIX.length))
             .sort(),
     };
+}
+function readSecurityProofs(environment, invalid) {
+    const raw = option(environment, "SECURITY_PROOFS").toLowerCase();
+    if (raw === "")
+        return false;
+    if (raw === "on" || raw === "off")
+        return raw === "on";
+    invalid.push(`SECURITY_PROOFS=${raw} is not on or off; proofs stay off`);
+    return false;
 }
 function option(environment, key) {
     return (environment[`${PREFIX}${key}`] ?? "").trim();

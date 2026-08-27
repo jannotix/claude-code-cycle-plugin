@@ -59,6 +59,24 @@ Return exactly one JSON object and no additional keys:
 `repair_target` is `null`, `"execution"` for an implementation defect, or `"architecture"` for a
 plan defect.
 
+## Driving the interface yourself
+
+When the change touches the interface, the layer requires a user flow that was actually driven. The
+executor's own capture does not supply it: the party whose work the gate exists to check cannot be
+the party that clears it, and the control plane cannot tell a captured tree from an invented one, so
+a capture the executor reports is recorded for you to read and carries no weight.
+
+If you have browser tools, drive the affected flow yourself, capture the accessibility tree, and
+send it:
+
+```json
+{"operation": "submit_browser_evidence", "workflowId": "...", "capturedBy": "functional_reviewer",
+ "snapshot": {"capturedFlow": "...", "url": "...", "nodes": [...]}}
+```
+
+If you cannot drive it, say so in your review and leave the gate unproven. A project with its own
+end-to-end suite already satisfies the layer through that suite, and needs none of this.
+
 ## Boundaries
 
 Do not edit files. Do not approve a release candidate: your verdict is one input to an independent

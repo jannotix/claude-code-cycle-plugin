@@ -132,6 +132,16 @@ export function submitPlan(context, workflowId, raw, now = Date.now()) {
 export function reportTask(context, workflowId, key, status, summary, changedPaths = [], now = Date.now()) {
     const workflow = load(context, workflowId);
     if (status === "completed") {
+        if (changedPaths === null) {
+            record(context, workflowId, "execution.change_set_unreadable", { task: key });
+            return {
+                reason: "the change set could not be read, so this task's writes cannot be reconciled against " +
+                    "the scopes the plan authorized. Nothing has been recorded as completed. Report the " +
+                    "task again.",
+                retry: true,
+                state: workflow.state,
+            };
+        }
         const violations = outOfScope(context, workflowId, key, changedPaths);
         if (violations.length !== 0) {
             setTaskState(context.database, workflowId, key, "blocked", now);
@@ -391,16 +401,17 @@ export function submitReviewVerdict(context, workflowId, role, raw, now = Date.n
         next = transition(context, workflow, { type: "reviews_ready" }, now);
     return { decision: verdict.decision, reviewsReady, state: next.state };
 }
-export function submitBrowserEvidence(context, workflowId, raw, now = Date.now()) {
+export function submitBrowserEvidence(context, workflowId, raw, capturedBy = "executor", now = Date.now()) {
     const workflow = load(context, workflowId);
     if (workflow.state !== "verification" && workflow.state !== "independent_reviews") {
         throw new WorkflowError(`browser evidence is accepted while the candidate is being verified or reviewed, not in ${workflow.state}`);
     }
     const candidateId = requireCandidate(workflow);
     const snapshot = parseSnapshot(raw);
-    const { evidence, findings } = browserEvidence(snapshot, now);
+    const { evidence, findings } = browserEvidence(snapshot, capturedBy, now);
     recordEvidence(context.database, candidateId, evidence, (item) => item.gate.mandatory);
     record(context, workflowId, "browser.captured", {
+        capturedBy,
         findings: String(findings.length),
         flow: snapshot.capturedFlow.slice(0, 200),
         url: snapshot.url.slice(0, 500),
@@ -415,6 +426,13 @@ export async function submitSecurityProof(context, workflowId, root, request, no
     const workflow = load(context, workflowId);
     if (workflow.state !== "independent_reviews" && workflow.state !== "arbitration") {
         throw new WorkflowError(`a proof is run while the candidate is under review, not in ${workflow.state}`);
+    }
+    if (!context.configuration.securityProofs) {
+        throw new WorkflowError("executing a proof is off. A proof runs code supplied by the reviewer against a copy of the " +
+            "candidate, with this account's privileges and no operating-system sandbox, so it is " +
+            "enabled deliberately: set the plugin's security_proofs option to on. Until then, state " +
+            "the vulnerability and the reasoning in the review; an undemonstrated critical is " +
+            "downgraded, not discarded.");
     }
     const candidateId = requireCandidate(workflow);
     const gateName = proofGateName(request.vulnerabilityClass);

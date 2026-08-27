@@ -94,3 +94,22 @@ test("every declared option is wired to the server and read by it", async () => 
   assert.deepEqual(readConfiguration(environment).unknown, [])
   assert.equal(readConfiguration(environment).delivered, Object.keys(manifest.userConfig).length)
 })
+
+// A proof executes code the reviewer wrote, with this account's privileges and no operating-system
+// sandbox. Installing a plugin must not be how someone acquires that.
+test("executing security proofs is off until it is turned on", () => {
+  assert.equal(readConfiguration({}).securityProofs, false)
+  assert.equal(
+    readConfiguration({ CLAUDE_PLUGIN_OPTION_SECURITY_PROOFS: "on" }).securityProofs,
+    true,
+  )
+  assert.equal(
+    readConfiguration({ CLAUDE_PLUGIN_OPTION_SECURITY_PROOFS: "off" }).securityProofs,
+    false,
+  )
+
+  // A value nobody recognises leaves the capability off and says so, rather than guessing.
+  const odd = readConfiguration({ CLAUDE_PLUGIN_OPTION_SECURITY_PROOFS: "yes" })
+  assert.equal(odd.securityProofs, false)
+  assert.ok(odd.invalid.some((entry) => entry.includes("SECURITY_PROOFS")))
+})

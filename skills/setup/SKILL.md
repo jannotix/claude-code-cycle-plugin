@@ -22,8 +22,14 @@ Set up Cycle in this project: $ARGUMENTS
 
 ## What setup does not do
 
-It does not write configuration. Role models, efforts, strictness and the repair budget live in the
-plugin's own `userConfig`, which Claude Code owns; Cycle names the option and the user sets it.
+It does not write configuration. Role models, efforts, strictness, the repair budget and whether
+security proofs may execute live in the plugin's own `userConfig`, which Claude Code owns; Cycle
+names the option and the user sets it.
+
+`security_proofs` is off unless the user turns it on. With it on, the security reviewer can have the
+control plane execute a proof it wrote against a throwaway copy of the candidate — real code, this
+account's privileges, no operating-system sandbox. Name that plainly if the user asks about it, and
+do not recommend turning it on.
 It does not create a gateway, read a credential or contact anything.
 
 There is no initialisation step to run: the store, the signing key and the code graph are created on

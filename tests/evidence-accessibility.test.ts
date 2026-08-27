@@ -83,9 +83,10 @@ test("a page with no main landmark, or with two, is a finding", () => {
   assert.deepEqual(rules([node("main", "A"), node("main", "B")]), ["a11y/duplicate-main"])
 })
 
-// The interface layer's required-missing gates are satisfied by a captured flow, not by a claim.
+// The interface layer's required-missing gates are satisfied by a flow a reviewer drove, not by a
+// claim, and not by the executor's account of its own work.
 test("a captured flow produces both interface gates", () => {
-  const { evidence } = browserEvidence(parseSnapshot(snapshot([node("main", "M")])), 1)
+  const { evidence } = browserEvidence(parseSnapshot(snapshot([node("main", "M")])), "functional_reviewer", 1)
 
   assert.deepEqual(
     evidence.map((item) => [item.gate.name, item.status]),
@@ -100,6 +101,7 @@ test("a captured flow produces both interface gates", () => {
 test("a control nobody can announce fails the accessibility gate", () => {
   const { evidence } = browserEvidence(
     parseSnapshot(snapshot([node("main", "M", { children: [node("button")] })])),
+    "functional_reviewer",
     1,
   )
 
@@ -109,8 +111,25 @@ test("a control nobody can announce fails the accessibility gate", () => {
 
 // A missing landmark is worth saying and not worth blocking a delivery over.
 test("findings below high are recorded without failing the gate", () => {
-  const { evidence } = browserEvidence(parseSnapshot(snapshot([node("button", "Save")])), 1)
+  const { evidence } = browserEvidence(parseSnapshot(snapshot([node("button", "Save")])), "functional_reviewer", 1)
 
   assert.equal(evidence[1]?.status, "passed")
   assert.match(evidence[1]?.output ?? "", /a11y\/no-main-landmark/u)
+})
+
+// The executor supplied the object that became this evidence, and the control plane cannot tell a
+// captured tree from an invented one. It was recorded as the mandatory gate passing, so the party
+// being judged wrote the proof that unblocked it.
+test("a flow the executor reported carries no mandatory weight", () => {
+  const { evidence } = browserEvidence(parseSnapshot(snapshot([node("main", "M")])), "executor", 1)
+
+  assert.deepEqual(
+    evidence.map((item) => [item.gate.name, item.status]),
+    [
+      ["browser:executor-report", "warning"],
+      ["accessibility:executor-report", "warning"],
+    ],
+  )
+  assert.ok(evidence.every((item) => !item.gate.mandatory))
+  assert.match(evidence[0]?.output ?? "", /does not satisfy the interface layer/u)
 })

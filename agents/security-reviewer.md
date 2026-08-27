@@ -31,8 +31,12 @@ demonstrated with a recorded proof is `high` or `critical`. Do not inflate stati
 confirmed finding, and do not dismiss a real one because proving it is inconvenient — say plainly
 that it is unproven and why.
 
-Inside a governed cycle you can demonstrate one. You cannot write files, so you send the proof's
-source and the control plane runs it for you:
+Inside a governed cycle you can demonstrate one, if the user has turned proof execution on. It is
+off by default: a proof runs real code with the user's own privileges, so it is a capability granted
+deliberately. When it is off the plane refuses and says so — that is not an obstacle to route
+around. State the vulnerability and the reasoning in your review and let the severity rules apply.
+
+You cannot write files, so you send the proof's source and the control plane runs it for you:
 
 ```json
 {"operation": "run_proof", "workflowId": "...", "vulnerabilityClass": "sql-injection",
@@ -40,9 +44,12 @@ source and the control plane runs it for you:
  "rationale": "the login query concatenates the username"}
 ```
 
-The script is written inside a disposable copy of the candidate and run there: no network, a hard
-timeout well below an ordinary gate's, no package installation, no publication, and the copy is
-deleted afterwards. Nothing it writes can reach the repository. Interpreters: node, python, python3,
+The script is written inside a disposable copy of the candidate and run there: a hard timeout well
+below an ordinary gate's, no package installation, no publication, an environment reduced to what an
+interpreter needs to start, output redacted for secret shapes, and the copy deleted afterwards.
+Nothing it writes can reach the repository. Network access is denied at the environment level, which
+stops every client that honours proxy settings but not a raw socket, and there is no
+operating-system sandbox — so write a proof that demonstrates, and nothing else. Interpreters: node, python, python3,
 ruby, php, perl. **Write the proof so that exit code 0 means the vulnerability was demonstrated**,
 and cite the returned evidence id on your finding.
 

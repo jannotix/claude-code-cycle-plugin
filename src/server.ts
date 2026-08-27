@@ -591,7 +591,9 @@ const workflowTool: ToolDefinition = {
   description:
     "Drive one governed Cycle workflow. The state machine decides what is allowed next; an " +
     "operation sent in the wrong state is refused rather than reordered. `submit_browser_evidence` " +
-    "records a captured user flow and its accessibility tree as the interface layer's proof. " +
+    "records a captured user flow and its accessibility tree; pass `capturedBy` with the role that " +
+    "drove it, because only a capture from a reviewer proves the interface layer and the " +
+    "executor's own capture is recorded as a report. " +
     "`run_proof` executes one security proof against a disposable copy of the candidate: supply " +
     "the proof source as `script` and write it so exit code 0 means the vulnerability was shown. " +
     "`deliver` promotes the approved bytes and re-verifies them; `reconcile` resumes a workflow " +
@@ -667,10 +669,10 @@ const workflowTool: ToolDefinition = {
       case "report_task": {
         // Layer three reconciles against the worktree, not against the executor's summary, so the
         // change set is read here rather than taken from the caller.
-        const changed =
-          args["status"] === "completed"
-            ? ((await changedFiles(cycle.project.path)) ?? []).map((file) => file.path)
-            : []
+        // changedFiles returns null when the change set cannot be determined; that null is passed
+        // through, because only the layer that knows the scope rule may decide what unknown means.
+        const read = args["status"] === "completed" ? await changedFiles(cycle.project.path) : []
+        const changed = read === null ? null : read.map((file) => file.path)
         return reportTask(
           context,
           id(),
@@ -704,8 +706,14 @@ const workflowTool: ToolDefinition = {
           (args["role"] as "functional_reviewer" | "security_reviewer") ?? "functional_reviewer",
           args["verdict"],
         )
-      case "submit_browser_evidence":
-        return submitBrowserEvidence(context, id(), args["snapshot"])
+      case "submit_browser_evidence": {
+        // Only a role that is not the executor supplies evidence here; anything else, including an
+        // unstated role, is recorded as the executor's own report of its own work.
+        const by = args["capturedBy"]
+        const capturedBy =
+          by === "functional_reviewer" || by === "security_reviewer" ? by : "executor"
+        return submitBrowserEvidence(context, id(), args["snapshot"], capturedBy)
+      }
       case "run_proof":
         return await submitSecurityProof(context, id(), cycle.project.path, {
           ...(typeof args["command"] === "string" ? { command: args["command"] } : {}),

@@ -12,7 +12,7 @@ import {
   promote,
   recoverDelivery,
 } from "../evidence/delivery.ts"
-import { browserEvidence } from "../evidence/browser.ts"
+import { browserEvidence, type CapturedBy } from "../evidence/browser.ts"
 import type { VerificationOutcome } from "../evidence/gates.ts"
 import { proofEvidence, proofGateName } from "../evidence/proof-evidence.ts"
 import { runProof, type ProofRequest } from "../evidence/proof.ts"
@@ -238,12 +238,28 @@ export function reportTask(
   key: string,
   status: "blocked" | "completed" | "plan_defect",
   summary: string,
-  changedPaths: readonly string[] = [],
+  /**
+   * What the worktree says this task wrote, or null when git could not be read at all. Null is not
+   * an empty change set: flattening the two is how a transient git failure let a task with
+   * out-of-scope writes report as completed, with the scope gate never running.
+   */
+  changedPaths: readonly string[] | null = [],
   now = Date.now(),
 ): unknown {
   const workflow = load(context, workflowId)
 
   if (status === "completed") {
+    if (changedPaths === null) {
+      record(context, workflowId, "execution.change_set_unreadable", { task: key })
+      return {
+        reason:
+          "the change set could not be read, so this task's writes cannot be reconciled against " +
+          "the scopes the plan authorized. Nothing has been recorded as completed. Report the " +
+          "task again.",
+        retry: true,
+        state: workflow.state,
+      }
+    }
     const violations = outOfScope(context, workflowId, key, changedPaths)
     if (violations.length !== 0) {
       setTaskState(context.database, workflowId, key, "blocked", now)
@@ -678,6 +694,8 @@ export function submitBrowserEvidence(
   context: ServiceContext,
   workflowId: string,
   raw: unknown,
+  /** Unstated provenance is treated as self-reported: the weaker reading, never the flattering one. */
+  capturedBy: CapturedBy = "executor",
   now = Date.now(),
 ): unknown {
   const workflow = load(context, workflowId)
@@ -689,10 +707,11 @@ export function submitBrowserEvidence(
   const candidateId = requireCandidate(workflow)
 
   const snapshot = parseSnapshot(raw)
-  const { evidence, findings } = browserEvidence(snapshot, now)
+  const { evidence, findings } = browserEvidence(snapshot, capturedBy, now)
   recordEvidence(context.database, candidateId, evidence, (item) => item.gate.mandatory)
 
   record(context, workflowId, "browser.captured", {
+    capturedBy,
     findings: String(findings.length),
     flow: snapshot.capturedFlow.slice(0, 200),
     url: snapshot.url.slice(0, 500),
@@ -720,6 +739,15 @@ export async function submitSecurityProof(
   if (workflow.state !== "independent_reviews" && workflow.state !== "arbitration") {
     throw new WorkflowError(
       `a proof is run while the candidate is under review, not in ${workflow.state}`,
+    )
+  }
+  if (!context.configuration.securityProofs) {
+    throw new WorkflowError(
+      "executing a proof is off. A proof runs code supplied by the reviewer against a copy of the " +
+        "candidate, with this account's privileges and no operating-system sandbox, so it is " +
+        "enabled deliberately: set the plugin's security_proofs option to on. Until then, state " +
+        "the vulnerability and the reasoning in the review; an undemonstrated critical is " +
+        "downgraded, not discarded.",
     )
   }
   const candidateId = requireCandidate(workflow)

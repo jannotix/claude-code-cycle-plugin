@@ -432,7 +432,7 @@ while (cycles < 5) {
     // candidate, so it is submitted after the freeze and before the gates read it.
     if (captured) {
       await control(
-        `{"operation":"submit_browser_evidence","workflowId":${JSON.stringify(id)},"snapshot":${JSON.stringify(captured)}}`,
+        `{"operation":"submit_browser_evidence","workflowId":${JSON.stringify(id)},"capturedBy":"executor","snapshot":${JSON.stringify(captured)}}`,
         'Verification',
       )
     }

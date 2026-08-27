@@ -31,6 +31,14 @@ export interface Configuration {
   readonly invalid: readonly string[]
   readonly maxRepairCycles: number
   readonly roles: Readonly<Record<Role, RoleSettings>>
+  /**
+   * Whether the security reviewer may execute a proof against a copy of the candidate. Off unless
+   * the user turns it on: a proof runs real code, written by a model that has read the repository,
+   * with the user's own privileges and no OS sandbox. That is a capability to grant deliberately,
+   * not one to inherit by installing a plugin. With it off an undemonstrated critical is
+   * downgraded rather than deleted, which the gate rules already provide for.
+   */
+  readonly securityProofs: boolean
   /** Options that were set but that this build does not read, so they change nothing. */
   readonly unknown: readonly string[]
   /** How many option variables the host actually delivered to this process. */
@@ -73,7 +81,7 @@ const PREFIX = "CLAUDE_PLUGIN_OPTION_"
 export function readConfiguration(environment: NodeJS.ProcessEnv = process.env): Configuration {
   const invalid: string[] = []
   const roles = {} as Record<Role, RoleSettings>
-  const known = new Set(["DATA_DIR", "GATE_STRICTNESS", "MAX_REPAIR_CYCLES"])
+  const known = new Set(["DATA_DIR", "GATE_STRICTNESS", "MAX_REPAIR_CYCLES", "SECURITY_PROOFS"])
 
   for (const role of ROLES) {
     const modelKey = `${role.toUpperCase()}_MODEL`
@@ -93,11 +101,21 @@ export function readConfiguration(environment: NodeJS.ProcessEnv = process.env):
     invalid,
     maxRepairCycles: readRepairCycles(environment, invalid),
     roles,
+    securityProofs: readSecurityProofs(environment, invalid),
     unknown: Object.keys(environment)
       .filter((key) => key.startsWith(PREFIX) && !known.has(key.slice(PREFIX.length)))
       .map((key) => key.slice(PREFIX.length))
       .sort(),
   }
+}
+
+/** Anything that is not an explicit "on" leaves proofs off, including a value nobody recognises. */
+function readSecurityProofs(environment: NodeJS.ProcessEnv, invalid: string[]): boolean {
+  const raw = option(environment, "SECURITY_PROOFS").toLowerCase()
+  if (raw === "") return false
+  if (raw === "on" || raw === "off") return raw === "on"
+  invalid.push(`SECURITY_PROOFS=${raw} is not on or off; proofs stay off`)
+  return false
 }
 
 function option(environment: NodeJS.ProcessEnv, key: string): string {

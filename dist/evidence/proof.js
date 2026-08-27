@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, copyFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { redactSecrets } from "../secrets.js";
 import { parseCommand, UnsafeCommand } from "../workflow/commands.js";
 import { runCommand } from "./runner.js";
 import { gitArgs } from "../git.js";
@@ -97,6 +98,8 @@ export async function runProof(root, request) {
         return {
             containment: [
                 `disposable copy of ${copied} files, deleted after the run`,
+                "environment reduced to the variables an interpreter needs to start",
+                "output redacted for secret shapes before it is recorded or returned",
                 script ? `proof script written to ${scriptPath} inside the copy only` : "no script written",
                 `hard timeout of ${PROOF_TIMEOUT_SECONDS}s`,
                 "http and https proxied to a closed loopback port; localhost excluded",
@@ -104,16 +107,41 @@ export async function runProof(root, request) {
                 "no shell: program and argument vector only",
             ],
             demonstrated: outcome.unavailable === null && outcome.exitCode === 0,
-            outcome,
+            outcome: { ...outcome, output: redactSecrets(outcome.output) },
         };
     }
     finally {
         await rm(workspace, { force: true, recursive: true });
     }
 }
+const PASSED_THROUGH = new Set([
+    "COMSPEC",
+    "HOME",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LANG",
+    "LC_ALL",
+    "NUMBER_OF_PROCESSORS",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "TZ",
+    "USERPROFILE",
+    "WINDIR",
+].map((name) => name.toLowerCase()));
 function containedEnvironment() {
+    const inherited = {};
+    for (const [name, value] of Object.entries(process.env)) {
+        if (PASSED_THROUGH.has(name.toLowerCase()))
+            inherited[name] = value;
+    }
     return {
-        ...process.env,
+        ...inherited,
         ALL_PROXY: "http://127.0.0.1:1",
         HTTPS_PROXY: "http://127.0.0.1:1",
         HTTP_PROXY: "http://127.0.0.1:1",

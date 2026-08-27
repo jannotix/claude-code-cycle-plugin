@@ -21,6 +21,7 @@ import {
   startWorkflow,
   submitPlan,
   submitReviewVerdict,
+  submitSecurityProof,
   verifyCandidate,
   workflowStatus,
   WorkflowError,
@@ -1035,6 +1036,53 @@ test("start states the model each role runs on", () => {
     assert.equal(role("architect").subagentModel, "opus")
     assert.equal(role("executor").subagentModel, "sonnet")
     assert.equal(role("functional-reviewer").subagentModel, null)
+  } finally {
+    close()
+  }
+})
+
+// The scope gate reconciles what a task wrote against what the plan authorized it to write. The
+// change set arrived from git, and git failing was flattened to an empty array by the caller, so an
+// unreadable worktree read as "this task wrote nothing" and every scope check passed vacuously.
+test("a change set that could not be read does not complete a task", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "add oauth login to the dashboard", [], "full") as {
+      workflowId: string
+    }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+
+    const refused = reportTask(ctx, id, "task-1", "completed", "done", null) as {
+      reason: string
+      retry: boolean
+    }
+    assert.equal(refused.retry, true)
+    assert.match(refused.reason, /could not be read/u)
+
+    const tasks = (workflowStatus(ctx, id) as { tasks: { key: string; state: string }[] }).tasks
+    assert.notEqual(tasks.find((task) => task.key === "task-1")?.state, "completed")
+  } finally {
+    close()
+  }
+})
+
+// The reviewer asks the control plane to run code it wrote. That capability is granted deliberately
+// or not at all: the default install refuses, and says what to do instead.
+test("a proof is refused unless executing proofs was turned on", async () => {
+  const { close, ctx } = context()
+  try {
+    const id = toArbitration(ctx)
+
+    await assert.rejects(
+      () =>
+        submitSecurityProof(ctx, id, ".", {
+          rationale: "show the injection",
+          script: "process.exit(0)",
+          vulnerabilityClass: "injection",
+        }),
+      /security_proofs/u,
+    )
   } finally {
     close()
   }

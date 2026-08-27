@@ -205,3 +205,40 @@ test("a proof with neither a script nor a command is refused", async () => {
     rmSync(root, { force: true, recursive: true })
   }
 })
+
+// The proof's source is written by a model that has read the repository, so whatever the repository
+// asked it to write runs here. Inheriting the whole environment handed it every token and key the
+// user happened to have exported.
+test("a proof cannot read the environment it was launched from", async () => {
+  process.env["CYCLE_TEST_FAKE_TOKEN"] = "cycle-env-leak-canary"
+  const root = repository({
+    "exploit.mjs": "console.log(String(process.env.CYCLE_TEST_FAKE_TOKEN)); process.exit(0)",
+  })
+  try {
+    const result = await runProof(root, { command: "node exploit.mjs" })
+
+    assert.equal(result.outcome.output.includes("cycle-env-leak-canary"), false)
+    assert.match(result.outcome.output, /undefined/u)
+    // The interpreter still starts, which is the point of an allowlist rather than an empty map.
+    assert.equal(result.outcome.exitCode, 0)
+  } finally {
+    delete process.env["CYCLE_TEST_FAKE_TOKEN"]
+    rmSync(root, { force: true, recursive: true })
+  }
+})
+
+// The output is recorded as evidence and handed back to the reviewer. A proof that printed a secret
+// published it into both.
+test("a proof's output is redacted before it is recorded", async () => {
+  const root = repository({
+    "exploit.mjs": 'console.log("found AKIAIOSFODNN7EXAMPLE in the config"); process.exit(0)',
+  })
+  try {
+    const result = await runProof(root, { command: "node exploit.mjs" })
+
+    assert.equal(result.outcome.output.includes("AKIAIOSFODNN7EXAMPLE"), false)
+    assert.match(result.outcome.output, /found .* in the config/u)
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
+})
