@@ -1,4 +1,5 @@
 import { release } from "../admission.js";
+import { issueCaptureCapabilities, redeemCaptureCapability } from "../store/capabilities.js";
 import { ROLES } from "../config.js";
 import { resolveRole } from "../roles.js";
 import { advanceGoalOfWorkflow, linkStartedWorkflow } from "../goals.js";
@@ -213,6 +214,7 @@ export function freezeCandidate(context, workflowId, captured, now = Date.now())
         baseRevision: captured.manifest.baseRevision,
         candidateDigest,
         candidateId,
+        captureCapabilities: issueCaptureCapabilities(context.database, workflowId, candidateId, now),
         files: captured.manifest.files.length,
         state: next.state,
     };
@@ -401,12 +403,22 @@ export function submitReviewVerdict(context, workflowId, role, raw, now = Date.n
         next = transition(context, workflow, { type: "reviews_ready" }, now);
     return { decision: verdict.decision, reviewsReady, state: next.state };
 }
-export function submitBrowserEvidence(context, workflowId, raw, capturedBy = "executor", now = Date.now()) {
+export function submitBrowserEvidence(context, workflowId, raw, captureToken = null, now = Date.now()) {
     const workflow = load(context, workflowId);
     if (workflow.state !== "verification" && workflow.state !== "independent_reviews") {
         throw new WorkflowError(`browser evidence is accepted while the candidate is being verified or reviewed, not in ${workflow.state}`);
     }
     const candidateId = requireCandidate(workflow);
+    let capturedBy = "executor";
+    if (captureToken !== null) {
+        const redeemed = redeemCaptureCapability(context.database, candidateId, captureToken, now);
+        if (redeemed.role === null) {
+            throw new WorkflowError(`this capture capability is ${redeemed.reason === "consumed" ? "already spent" : "not valid for this candidate"}. ` +
+                "It is issued to one reviewing role when the candidate is frozen and can be spent once. " +
+                "Submit without it to record a self-reported capture, which carries no weight.");
+        }
+        capturedBy = redeemed.role;
+    }
     const snapshot = parseSnapshot(raw);
     const { evidence, findings } = browserEvidence(snapshot, capturedBy, now);
     recordEvidence(context.database, candidateId, evidence, (item) => item.gate.mandatory);
@@ -418,6 +430,7 @@ export function submitBrowserEvidence(context, workflowId, raw, capturedBy = "ex
     });
     return {
         accessibility: findings,
+        capturedBy,
         evidenceIds: evidence.map((item) => item.id),
         state: workflow.state,
     };

@@ -94,6 +94,9 @@ const preference = input.preference ?? 'auto'
 // second one. The others read and change nothing.
 const RETRYABLE = new Set(['start', 'status', 'recall'])
 
+/** Capture capabilities by role, held only long enough to hand each to the role it was issued to. */
+const capabilities = {}
+
 function retryable(instruction) {
   const found = /"operation":"([a-z_]+)"/.exec(instruction)
   return found !== null && RETRYABLE.has(found[1])
@@ -428,11 +431,16 @@ while (cycles < 5) {
     phase('Verification')
     outcome = await control(`{"operation":"freeze_candidate","workflowId":${JSON.stringify(id)}}`, 'Verification')
 
-    // The interface layer is proved by a flow that was actually driven. The capture belongs to the
-    // candidate, so it is submitted after the freeze and before the gates read it.
+    // One secret per reviewing role, returned by the freeze and never again. Each is handed to that
+    // role alone, which is how the plane can know who drove a flow rather than be told. The
+    // executor's work is already frozen by now, and no role can read another's prompt.
+    for (const capability of outcome?.captureCapabilities ?? []) capabilities[capability.role] = capability.token
+
+    // The interface layer is proved by a flow that was actually driven. The executor's capture is
+    // its own account of its own work: it is submitted with no capability, and recorded as such.
     if (captured) {
       await control(
-        `{"operation":"submit_browser_evidence","workflowId":${JSON.stringify(id)},"capturedBy":"executor","snapshot":${JSON.stringify(captured)}}`,
+        `{"operation":"submit_browser_evidence","workflowId":${JSON.stringify(id)},"snapshot":${JSON.stringify(captured)}}`,
         'Verification',
       )
     }
@@ -462,7 +470,13 @@ while (cycles < 5) {
   if (full && from <= RANK.independent_reviews) {
     phase('Review')
     const reviews = await parallel([
-      () => role('functional-reviewer', reviewPrompt(request, 'completeness', evidence, requirements), 'Review', VERDICT),
+      () =>
+        role(
+          'functional-reviewer',
+          reviewPrompt(request, 'completeness', evidence, requirements, capabilities.functional_reviewer),
+          'Review',
+          VERDICT,
+        ),
       () => role('security-reviewer', securityPrompt(request, evidence, id, requirements), 'Review', VERDICT),
     ])
     const roles = ['functional_reviewer', 'security_reviewer']
@@ -642,14 +656,29 @@ do not change branches, do not approve your own work.
 If this task changes anything a user sees, drive the affected flow in the browser afterwards and
 capture the accessibility tree. Return it as \`browser\`: {"capturedFlow":"what you did",
 "url":"...","nodes":[{"role":"...","name":"...","level":null,"children":[]}]}. Every node needs all
-four keys. Omit \`browser\` entirely when the change touches no interface. Without it the interface
-layer has no proof and verification fails, which is the gate working.
+four keys. Omit \`browser\` entirely when the change touches no interface. It is recorded as your
+own account of your own work and proves nothing on its own: the layer is proved by a reviewer that
+drives the flow itself. Report what you actually did.
 
 Return one JSON object: {"status":"completed|blocked|plan_defect","summary":"...","browser":null}`
 }
 
-function reviewPrompt(text, lens, evidence, requirements) {
-  return `Independently review the frozen candidate for ${lens}. You cannot see the other reviewer.
+function reviewPrompt(text, lens, evidence, requirements, captureToken) {
+  const interfaceProof = captureToken
+    ? `
+If the change touches the interface and you have browser tools, drive the affected flow yourself and
+submit what you captured. The executor's own capture is recorded but proves nothing: the party whose
+work a gate checks cannot be the party that clears it. This token was issued to you alone and can be
+spent once:
+
+{"operation": "submit_browser_evidence", "workflowId": "...", "captureToken": ${JSON.stringify(captureToken)},
+ "snapshot": {"capturedFlow": "...", "url": "...", "nodes": [...]}}
+
+If you cannot drive it, say so and leave the layer unproven. Do not submit a tree you did not
+capture: it is the one thing that would make this review worthless.
+`
+    : ''
+  return interfaceProof + `Independently review the frozen candidate for ${lens}. You cannot see the other reviewer.
 
 ${graphGuidance('Ask it what a change to the candidate paths reaches: a caller the change breaks is a regression whether or not a gate ran over it.')}
 

@@ -1,4 +1,5 @@
 import { release } from "../admission.ts"
+import { issueCaptureCapabilities, redeemCaptureCapability } from "../store/capabilities.ts"
 import { ROLES, type Configuration } from "../config.ts"
 import { resolveRole } from "../roles.ts"
 import { advanceGoalOfWorkflow, linkStartedWorkflow } from "../goals.ts"
@@ -374,6 +375,9 @@ export function freezeCandidate(
     baseRevision: captured.manifest.baseRevision,
     candidateDigest,
     candidateId,
+    // One secret per reviewing role, returned exactly once. The run hands each to that role alone,
+    // which is what lets the plane know who captured a flow instead of being told.
+    captureCapabilities: issueCaptureCapabilities(context.database, workflowId, candidateId, now),
     files: captured.manifest.files.length,
     state: next.state,
   }
@@ -694,8 +698,13 @@ export function submitBrowserEvidence(
   context: ServiceContext,
   workflowId: string,
   raw: unknown,
-  /** Unstated provenance is treated as self-reported: the weaker reading, never the flattering one. */
-  capturedBy: CapturedBy = "executor",
+  /**
+   * The secret issued to a reviewing role when the candidate was frozen. No token means the
+   * executor reporting its own work, which is recorded and carries no weight. A token that does not
+   * redeem is refused outright rather than quietly downgraded: something tried to authenticate and
+   * failed, and treating that as an ordinary self-report would hide it.
+   */
+  captureToken: string | null = null,
   now = Date.now(),
 ): unknown {
   const workflow = load(context, workflowId)
@@ -705,6 +714,19 @@ export function submitBrowserEvidence(
     )
   }
   const candidateId = requireCandidate(workflow)
+
+  let capturedBy: CapturedBy = "executor"
+  if (captureToken !== null) {
+    const redeemed = redeemCaptureCapability(context.database, candidateId, captureToken, now)
+    if (redeemed.role === null) {
+      throw new WorkflowError(
+        `this capture capability is ${redeemed.reason === "consumed" ? "already spent" : "not valid for this candidate"}. ` +
+          "It is issued to one reviewing role when the candidate is frozen and can be spent once. " +
+          "Submit without it to record a self-reported capture, which carries no weight.",
+      )
+    }
+    capturedBy = redeemed.role
+  }
 
   const snapshot = parseSnapshot(raw)
   const { evidence, findings } = browserEvidence(snapshot, capturedBy, now)
@@ -719,6 +741,8 @@ export function submitBrowserEvidence(
 
   return {
     accessibility: findings,
+    // Said back, so a caller learns what its submission was credited as rather than assuming.
+    capturedBy,
     evidenceIds: evidence.map((item) => item.id),
     state: workflow.state,
   }

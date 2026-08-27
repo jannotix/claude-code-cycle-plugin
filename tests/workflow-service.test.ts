@@ -20,6 +20,7 @@ import {
   reportTask,
   startWorkflow,
   submitPlan,
+  submitBrowserEvidence,
   submitReviewVerdict,
   submitSecurityProof,
   verifyCandidate,
@@ -1083,6 +1084,64 @@ test("a proof is refused unless executing proofs was turned on", async () => {
         }),
       /security_proofs/u,
     )
+  } finally {
+    close()
+  }
+})
+
+const FLOW = {
+  capturedFlow: "opened the dashboard",
+  nodes: [{ children: [], level: 1, name: "Main", role: "main" }],
+  url: "http://localhost:3000/",
+}
+
+// Over stdio the plane reads a line; it has no notion of who wrote it. A submission that named its
+// own role was therefore a claim anyone could make, and the party the gate exists to check could
+// make it. The role now comes from a secret the plane issued and delivered to one role.
+test("the role a capture is credited to comes from the capability, not the caller", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "restyle the banner", [], "full") as { workflowId: string }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const frozen = freezeCandidate(ctx, id, emptyCandidate()) as {
+      captureCapabilities: { role: string; token: string }[]
+    }
+
+    // One per reviewing role, and the executor is not one of them.
+    assert.deepEqual(
+      frozen.captureCapabilities.map((entry) => entry.role).sort(),
+      ["functional_reviewer", "security_reviewer"],
+    )
+
+    const security = frozen.captureCapabilities.find((entry) => entry.role === "security_reviewer")!
+    const credited = submitBrowserEvidence(ctx, id, FLOW, security.token) as { capturedBy?: string }
+    assert.equal(credited.capturedBy, "security_reviewer")
+
+    // Spent once. A capability that survived its use would be a password shared with everyone who
+    // ever saw a transcript.
+    assert.throws(() => submitBrowserEvidence(ctx, id, FLOW, security.token), /already spent/u)
+  } finally {
+    close()
+  }
+})
+
+test("a capability nobody was issued is refused, and no role is credited", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "restyle the banner", [], "full") as { workflowId: string }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    freezeCandidate(ctx, id, emptyCandidate())
+
+    assert.throws(() => submitBrowserEvidence(ctx, id, FLOW, "not-a-token"), /not valid/u)
+
+    // Submitting without one stays open: that is the executor reporting its own work, which is
+    // recorded and carries no weight.
+    const reported = submitBrowserEvidence(ctx, id, FLOW) as { capturedBy?: string }
+    assert.equal(reported.capturedBy, "executor")
   } finally {
     close()
   }

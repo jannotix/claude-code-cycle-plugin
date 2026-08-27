@@ -67,12 +67,17 @@ the party that clears it, and the control plane cannot tell a captured tree from
 a capture the executor reports is recorded for you to read and carries no weight.
 
 If you have browser tools, drive the affected flow yourself, capture the accessibility tree, and
-send it:
+send it with the capture token your prompt gave you. The token was issued to you alone when the
+candidate was frozen and can be spent once; a submission without one is recorded as a self-report
+and proves nothing, and the plane reads the role from the token rather than from anything you say:
 
 ```json
-{"operation": "submit_browser_evidence", "workflowId": "...", "capturedBy": "functional_reviewer",
+{"operation": "submit_browser_evidence", "workflowId": "...", "captureToken": "…from your prompt…",
  "snapshot": {"capturedFlow": "...", "url": "...", "nodes": [...]}}
 ```
+
+Never submit a tree you did not capture. The token makes your submission count, which is exactly
+why spending it on an invented flow would be the worst thing you could do here.
 
 If you cannot drive it, say so in your review and leave the gate unproven. A project with its own
 end-to-end suite already satisfies the layer through that suite, and needs none of this.

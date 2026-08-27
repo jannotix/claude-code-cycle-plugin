@@ -591,9 +591,9 @@ const workflowTool: ToolDefinition = {
   description:
     "Drive one governed Cycle workflow. The state machine decides what is allowed next; an " +
     "operation sent in the wrong state is refused rather than reordered. `submit_browser_evidence` " +
-    "records a captured user flow and its accessibility tree; pass `capturedBy` with the role that " +
-    "drove it, because only a capture from a reviewer proves the interface layer and the " +
-    "executor's own capture is recorded as a report. " +
+    "records a captured user flow and its accessibility tree. A reviewer proves the interface " +
+    "layer by spending the `captureToken` it was issued when the candidate was frozen; a " +
+    "submission without one is recorded as a self-report and carries no weight. " +
     "`run_proof` executes one security proof against a disposable copy of the candidate: supply " +
     "the proof source as `script` and write it so exit code 0 means the vulnerability was shown. " +
     "`deliver` promotes the approved bytes and re-verifies them; `reconcile` resumes a workflow " +
@@ -618,6 +618,7 @@ const workflowTool: ToolDefinition = {
       rationale: { maxLength: 2_048, type: "string" },
       reason: { maxLength: 512, type: "string" },
       script: { maxLength: 65_536, type: "string" },
+      captureToken: { maxLength: 128, type: "string" },
       snapshot: { type: "object" },
       request: { maxLength: 100_000, type: "string" },
       role: { enum: ["functional_reviewer", "security_reviewer"], type: "string" },
@@ -707,12 +708,10 @@ const workflowTool: ToolDefinition = {
           args["verdict"],
         )
       case "submit_browser_evidence": {
-        // Only a role that is not the executor supplies evidence here; anything else, including an
-        // unstated role, is recorded as the executor's own report of its own work.
-        const by = args["capturedBy"]
-        const capturedBy =
-          by === "functional_reviewer" || by === "security_reviewer" ? by : "executor"
-        return submitBrowserEvidence(context, id(), args["snapshot"], capturedBy)
+        // The role is never taken from the caller: it is read from the capability the caller spends.
+        // A caller with no capability is recording its own report of its own work.
+        const token = typeof args["captureToken"] === "string" ? args["captureToken"] : null
+        return submitBrowserEvidence(context, id(), args["snapshot"], token)
       }
       case "run_proof":
         return await submitSecurityProof(context, id(), cycle.project.path, {

@@ -65,11 +65,24 @@ function fixture(baseline: Record<string, string> = { "README.md": "# fixture\n"
   }
 }
 
+/** The secret the plane issued to the functional reviewer for this workflow's frozen candidate. */
+function reviewerToken(workflowId: string): string {
+  const token = issued.get(workflowId)
+  if (token === undefined) throw new Error("no capture capability was issued for this workflow")
+  return token
+}
+
+const issued = new Map<string, string>()
+
 async function freeze(item: Fixture): Promise<string> {
   const started = startWorkflow(item.ctx, "change the fixture", [], "quick") as {
     workflowId: string
   }
-  freezeCandidate(item.ctx, started.workflowId, await captureCandidate(item.root))
+  const frozen = freezeCandidate(item.ctx, started.workflowId, await captureCandidate(item.root)) as {
+    captureCapabilities: { role: string; token: string }[]
+  }
+  const functional = frozen.captureCapabilities.find((entry) => entry.role === "functional_reviewer")
+  if (functional !== undefined) issued.set(started.workflowId, functional.token)
   return started.workflowId
 }
 
@@ -369,7 +382,7 @@ test("a captured browser flow satisfies the interface layer", async () => {
   try {
     item.write("src/components/Banner.tsx", "export const Banner = () => null\n")
     const workflowId = await freeze(item)
-    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, "functional_reviewer")
+    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, reviewerToken(workflowId))
 
     const { evidence, outcome } = await verifyFixture(item, workflowId)
 
@@ -417,7 +430,7 @@ test("the design detectors record findings for the reviewers without blocking", 
   try {
     item.write("src/theme.css", ".hint { color: #999999; background-color: #ffffff }\n")
     const workflowId = await freeze(item)
-    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, "functional_reviewer")
+    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, reviewerToken(workflowId))
 
     const { evidence, outcome } = await verifyFixture(item, workflowId)
 
@@ -493,7 +506,7 @@ test("the executor's own capture does not satisfy the interface layer", async ()
   try {
     item.write("src/components/Banner.tsx", "export const Banner = () => null")
     const workflowId = await freeze(item)
-    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, "executor")
+    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT)
 
     const { evidence, outcome } = await verifyFixture(item, workflowId)
 
