@@ -98,6 +98,15 @@ async function verifyFixture(
 const gate = (evidence: readonly StoredEvidence[], name: string): StoredEvidence | undefined =>
   evidence.find((item) => item.gateName === name)
 
+/** The recorded text of one gate, which the reviewers read and the store keeps verbatim. */
+const gateOutput = (item: Fixture, gateName: string): string =>
+  String(
+    item.ctx.database.get<{ output: string }>(
+      "select output from evidence where gate_name = ? order by finished_at desc limit 1",
+      gateName,
+    )?.output ?? "",
+  )
+
 // Certification 5.7.
 test("a secret in changed content fails the candidate", async () => {
   const item = fixture()
@@ -353,14 +362,14 @@ const SNAPSHOT = {
   url: "http://localhost:3000/",
 }
 
-// The interface layer's required gates exist to force the check. A check that actually ran supplies
-// them, and the missing-gate is not inserted on top of it.
+// The interface layer's required gates exist to force the check. A check a reviewer actually ran
+// supplies them, and the missing-gate is not inserted on top of it.
 test("a captured browser flow satisfies the interface layer", async () => {
   const item = fixture()
   try {
     item.write("src/components/Banner.tsx", "export const Banner = () => null\n")
     const workflowId = await freeze(item)
-    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT)
+    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, "functional_reviewer")
 
     const { evidence, outcome } = await verifyFixture(item, workflowId)
 
@@ -408,7 +417,7 @@ test("the design detectors record findings for the reviewers without blocking", 
   try {
     item.write("src/theme.css", ".hint { color: #999999; background-color: #ffffff }\n")
     const workflowId = await freeze(item)
-    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT)
+    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, "functional_reviewer")
 
     const { evidence, outcome } = await verifyFixture(item, workflowId)
 
@@ -431,6 +440,69 @@ test("a change with no interface file records the design gate as passed", async 
     const { evidence } = await verifyFixture(item, workflowId)
 
     assert.equal(gate(evidence, "design:detectors")?.status, "passed")
+  } finally {
+    item.close()
+  }
+})
+
+// A file above the hashing cap was recorded with a null digest, and the integrity comparison read
+// two nulls as a match. The bytes of such a file could change completely between freeze and
+// verification and the gate still reported that everything matched what was recorded at freeze.
+test("a file too large for the old hashing cap is still bound to its bytes", async () => {
+  const item = fixture()
+  try {
+    const big = "a".repeat(9 * 1024 * 1024)
+    item.write("assets/large.txt", big)
+    const workflowId = await freeze(item)
+
+    item.write("assets/large.txt", "b" + big.slice(1))
+    const { evidence, outcome } = await verifyFixture(item, workflowId)
+
+    assert.equal(gate(evidence, "integrity:candidate")?.status, "failed")
+    assert.match(gateOutput(item, "integrity:candidate"), /assets\/large\.txt/u)
+    assert.equal(outcome.mandatoryPassed, false)
+  } finally {
+    item.close()
+  }
+})
+
+// The scanner skipped content it could not read, then reported the total number of changed files as
+// the number scanned. A file nobody looked at was counted among the files that came back clean.
+test("the secret scan does not count a file it skipped as scanned", async () => {
+  const item = fixture()
+  try {
+    item.write("assets/large.txt", "a".repeat(40 * 1024 * 1024))
+    item.write("src/app.ts", "export const answer = 42")
+    const workflowId = await freeze(item)
+
+    await verifyFixture(item, workflowId)
+    const scan = gateOutput(item, "security:changed-content-secrets")
+
+    assert.match(scan, /assets\/large\.txt/u)
+    assert.doesNotMatch(scan, /^2 changed files scanned/u)
+  } finally {
+    item.close()
+  }
+})
+
+// The gate the interface layer requires was satisfied by an object the executor returned. Nothing
+// distinguished a tree it captured from one it wrote, so the party whose work the gate exists to
+// check was the party that supplied the proof clearing it.
+test("the executor's own capture does not satisfy the interface layer", async () => {
+  const item = fixture()
+  try {
+    item.write("src/components/Banner.tsx", "export const Banner = () => null")
+    const workflowId = await freeze(item)
+    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, "executor")
+
+    const { evidence, outcome } = await verifyFixture(item, workflowId)
+
+    // Recorded, and visible to the reviewers, but carrying no weight of its own.
+    assert.equal(gate(evidence, "browser:executor-report")?.status, "warning")
+    assert.equal(gate(evidence, "browser:executor-report")?.mandatory, false)
+    // The layer the change requires is still unproven, so its gate is inserted and fails.
+    assert.equal(gate(evidence, "browser:affected-user-flow")?.status, "failed")
+    assert.equal(outcome.mandatoryPassed, false)
   } finally {
     item.close()
   }

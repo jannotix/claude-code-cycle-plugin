@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { gitArgs } from "../git.js";
 const execFileAsync = promisify(execFile);
-const MAX_FILE_BYTES = 8 * 1_024 * 1_024;
+const MAX_SCAN_BYTES = 32 * 1_024 * 1_024;
 const GIT_TIMEOUT_MS = 30_000;
 export async function changedFiles(root) {
     let stdout;
@@ -50,7 +52,7 @@ function kindOf(status) {
 export async function readChangedContent(root, path) {
     try {
         const bytes = await readFile(join(root, path));
-        return bytes.byteLength > MAX_FILE_BYTES ? null : bytes.toString("utf8");
+        return bytes.byteLength > MAX_SCAN_BYTES ? null : bytes.toString("utf8");
     }
     catch {
         return null;
@@ -58,10 +60,9 @@ export async function readChangedContent(root, path) {
 }
 async function digestOf(path) {
     try {
-        const bytes = await readFile(path);
-        if (bytes.byteLength > MAX_FILE_BYTES)
-            return null;
-        return createHash("sha256").update(bytes).digest("hex");
+        const hash = createHash("sha256");
+        await pipeline(createReadStream(path), hash);
+        return hash.digest("hex");
     }
     catch {
         return null;

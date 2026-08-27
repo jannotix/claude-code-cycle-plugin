@@ -119,7 +119,12 @@ function integrity(input, changed) {
         });
     }
     const now = new Map(changed.map((file) => [file.path, file.digest]));
-    const drifted = frozen.filter((file) => now.get(file.path) !== file.digest);
+    const drifted = frozen.filter((file) => {
+        const current = now.get(file.path);
+        if (current === undefined || current === null || file.digest === null)
+            return true;
+        return current !== file.digest;
+    });
     const appeared = changed.filter((file) => !frozen.some((entry) => entry.path === file.path));
     if (drifted.length === 0 && appeared.length === 0) {
         return evidenceFor(INTEGRITY, startedAt, "passed", {
@@ -137,19 +142,29 @@ function integrity(input, changed) {
 async function secretScan(root, changed) {
     const startedAt = Date.now();
     const found = [];
+    const unread = [];
+    let scanned = 0;
     for (const file of changed) {
         if (file.kind === "deleted")
             continue;
         const content = await readChangedContent(root, file.path);
-        if (content === null)
+        if (content === null) {
+            unread.push(file.path);
             continue;
+        }
+        scanned += 1;
         for (const match of findSecrets(content))
             found.push(`${file.path}: ${match.rule}`);
     }
-    return evidenceFor(SECRET_SCAN, startedAt, found.length === 0 ? "passed" : "failed", {
-        output: found.length === 0
-            ? `${changed.length} changed files scanned, no secret shape found`
-            : ["secrets found in changed content", ...found].join("\n"),
+    const clean = found.length === 0 && unread.length === 0;
+    const lines = [
+        ...(found.length === 0 ? [] : ["secrets found in changed content", ...found]),
+        ...(unread.length === 0
+            ? []
+            : [`${unread.length} changed file(s) could not be read and were not scanned:`, ...unread]),
+    ];
+    return evidenceFor(SECRET_SCAN, startedAt, clean ? "passed" : "failed", {
+        output: clean ? `${scanned} changed files scanned, no secret shape found` : lines.join("\n"),
     });
 }
 function essentiality(input, changed) {
