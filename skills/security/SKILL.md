@@ -17,6 +17,11 @@ Review for security and architecture: $ARGUMENTS
 
 If `$ARGUMENTS` is empty, review the uncommitted changes in the working tree.
 
+**You are relaying, not investigating.** The role you dispatch does the reading; your part is to
+pass the prompt and report what comes back. Do not write files, edit anything, or run commands
+to check the findings yourself — a review that changes the thing under review is not a review,
+and the reader has no way to tell your edits from the work being assessed.
+
 ## Prompt to pass
 
 > Review the work below for security and architectural integrity. Inspect files and rerun only

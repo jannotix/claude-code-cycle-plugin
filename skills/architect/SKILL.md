@@ -19,6 +19,11 @@ Consult the architect about: $ARGUMENTS
 If `$ARGUMENTS` is empty, use the user's most recent request verbatim. Never paraphrase it: the
 exact wording is what the architect reasons about.
 
+**You are relaying, not investigating.** The role you dispatch does the reading; your part is to
+pass the prompt and report what comes back. Do not write files, edit anything, or run commands
+to check the findings yourself — a review that changes the thing under review is not a review,
+and the reader has no way to tell your edits from the work being assessed.
+
 ## Prompt to pass
 
 > Advise on the request below. Inspect the repository with read-only tools before answering.

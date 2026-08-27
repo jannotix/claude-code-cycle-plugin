@@ -19,6 +19,11 @@ Assess readiness of: $ARGUMENTS
 If `$ARGUMENTS` is empty, ask the user what the work was supposed to achieve — the arbiter judges
 against the request, so without the request there is nothing to judge against.
 
+**You are relaying, not investigating.** The role you dispatch does the reading; your part is to
+pass the prompt and report what comes back. Do not write files, edit anything, or run commands
+to check the findings yourself — a review that changes the thing under review is not a review,
+and the reader has no way to tell your edits from the work being assessed.
+
 ## Prompt to pass
 
 > Assess whether the work below is ready, measured against what the user actually asked for.
