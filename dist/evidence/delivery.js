@@ -162,6 +162,14 @@ async function git(root, args) {
     }
 }
 async function assertUnchanged(root, manifest) {
+    const head = (await git(root, ["rev-parse", "HEAD"]))?.trim() ?? null;
+    if (head === null) {
+        throw new DeliveryAborted("the base revision could not be read, so the candidate cannot be promoted");
+    }
+    if (head !== manifest.baseRevision) {
+        throw new DeliveryAborted(`the base revision moved after approval: judged on ${manifest.baseRevision.slice(0, 12)}, ` +
+            `now ${head.slice(0, 12)}`);
+    }
     const current = await changedFiles(root);
     if (current === null) {
         throw new DeliveryAborted("the working tree could not be read, so the candidate cannot be compared");

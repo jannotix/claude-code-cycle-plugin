@@ -546,3 +546,29 @@ test("a candidate with nothing to commit is refused", async () => {
     item.close()
   }
 })
+
+// The manifest records the revision the candidate was built and judged on, and the delivered commit
+// states it in a trailer. Nothing compared it again: only the working tree was checked, so a commit
+// landing between approval and promotion moved the base out from under an arbitrated candidate and
+// the trailer named a parent that was no longer the parent.
+test("a base revision that moved after approval aborts the delivery", async () => {
+  const item = fixture()
+  try {
+    item.write("src/app.ts", "export const answer = 42\n")
+    const { candidateId, workflowId } = await frozen(item)
+
+    // An unrelated commit: the candidate's own files are untouched, so the working-tree comparison
+    // still matches and only the base has changed.
+    item.write("NOTES.md", "unrelated\n")
+    execFileSync("git", ["-C", item.root, "add", "NOTES.md"], { stdio: "ignore" })
+    execFileSync("git", ["-C", item.root, "commit", "--quiet", "-m", "unrelated"], { stdio: "ignore" })
+
+    await assert.rejects(
+      () => promote(item.ctx.database, item.root, workflowId, candidateId, MESSAGE),
+      /base revision/u,
+    )
+    assert.equal(deliveryOf(item.ctx.database, workflowId), undefined)
+  } finally {
+    item.close()
+  }
+})
