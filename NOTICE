@@ -8,4 +8,6 @@ version's release date. See LICENSE.
 Cycle is an independent integration. It is not affiliated with, sponsored by or endorsed by
 Anthropic.
 
-This software has no runtime dependencies.
+Cycle installs no packages and needs no compiler. It does bundle a parser runtime and twelve
+grammars, all MIT licensed; THIRD-PARTY-NOTICES.md names each one and carries the notice their
+licence requires to travel with every copy.

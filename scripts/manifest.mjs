@@ -14,6 +14,9 @@ export const ALLOWED = [
   { kind: "file", path: ".mcp.json" },
   { kind: "file", path: "LICENSE" },
   { kind: "file", path: "NOTICE" },
+  // The artifact bundles a parser runtime and twelve grammars. Their licence requires the notice
+  // to travel with every copy, so it ships or the copy is not licensed.
+  { kind: "file", path: "THIRD-PARTY-NOTICES.md" },
   { kind: "file", path: "README.md" },
   { kind: "file", path: "CHANGELOG.md" },
   { kind: "file", path: "SECURITY.md" },
