@@ -9,6 +9,9 @@
 // with it. That is also why every failure here is silent — layers one and three do not depend on
 // this process running, and a boundary that needs all three to be up is not three layers.
 
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const READ_ONLY = new Set([
@@ -140,8 +143,50 @@ function gitVerb(segment) {
 }
 
 /** The decision for one payload, or null when this hook has no opinion about it. */
+
+/**
+ * Layer two identifies a role by reading fields the host puts in the payload. If the host renames
+ * them, roleOf finds nothing, every call reads as the user's own session, and the layer becomes a
+ * no-op — correctly, by design, but with no way for anyone to notice. Layers one and three still
+ * hold, so this is not an outage; it is a boundary that quietly stopped being a boundary.
+ *
+ * So the guard counts what it attributed and what it did not. Two integers, no paths and no
+ * payload content: enough for the doctor to say "this ran two hundred times and recognised a role
+ * in none of them", which is what blindness looks like from outside. Every write here is
+ * best-effort, because a boundary that fails when its bookkeeping fails is worse than no
+ * bookkeeping.
+ */
+function tally(attributed) {
+  try {
+    const base =
+      process.env.CLAUDE_PLUGIN_OPTION_DATA_DIR ||
+      (process.platform === 'win32'
+        ? process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Cycle')
+        : process.platform === 'darwin'
+          ? join(homedir(), 'Library', 'Application Support', 'Cycle')
+          : join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'cycle'))
+    if (!base) return
+
+    const path = join(base, 'guard-attribution.json')
+    let seen = { attributed: 0, unattributed: 0 }
+    try {
+      seen = { ...seen, ...JSON.parse(readFileSync(path, 'utf8')) }
+    } catch {
+      // First run, or a file nobody can read: start from zero rather than give up counting.
+    }
+    seen[attributed ? 'attributed' : 'unattributed'] += 1
+    seen.lastAt = Date.now()
+
+    mkdirSync(base, { recursive: true })
+    writeFileSync(path, JSON.stringify(seen))
+  } catch {
+    // Silent on purpose: see the module comment.
+  }
+}
+
 export function decide(payload) {
   const role = roleOf(payload)
+  tally(role !== null)
   if (role === null) return null
 
   const tool = String(payload.tool_name ?? payload.toolName ?? '')

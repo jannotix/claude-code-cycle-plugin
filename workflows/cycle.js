@@ -273,10 +273,22 @@ const VERDICT = {
 }
 
 phase('Route')
-const started = await control(
+let started = await control(
   `{"operation":"start","request":${JSON.stringify(request)},"preference":${JSON.stringify(preference)}}`,
   'Route',
 )
+// The relay is a model, and a model on the return path is not a transport: replies have come back
+// missing a field before. Losing workflowId here stops the whole run at its first line, with the
+// plane holding a workflow it started and nobody driving it — which is what happened on every
+// attempt to certify a complete cycle. The plane knows what it just started, so ask it. Starting is
+// idempotent per request, so this reads the same workflow rather than opening a second one.
+if (!started?.workflowId) {
+  const seen = await control(`{"operation":"status"}`, 'Route')
+  if (seen?.workflowId) {
+    log('the start reply arrived without a workflow id; read it back from the plane')
+    started = { ...seen, ...started, mode: started?.mode ?? seen.mode, workflowId: seen.workflowId }
+  }
+}
 if (!started?.workflowId) return { error: 'the workflow could not be started', started }
 
 const id = started.workflowId

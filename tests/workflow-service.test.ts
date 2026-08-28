@@ -1146,3 +1146,32 @@ test("a capability nobody was issued is refused, and no role is credited", () =>
     close()
   }
 })
+
+// The layer that tells a person what a run did is prose written by a model, and prose drifts. A
+// workflow stopped in delivery on the quick route with no reviews was reported as "completed, full
+// cycle, seven agents". The plane cannot stop a caller paraphrasing, but it can hand it a sentence
+// built from the record, so that a paraphrase is visibly not the sentence.
+test("status carries a summary built from the record, not from an account of it", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "add oauth login to the dashboard", [], "full") as {
+      workflowId: string
+    }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+
+    const early = (workflowStatus(ctx, id) as { summary: string }).summary
+    assert.match(early, /route full/u)
+    assert.match(early, /tasks 0\/1/u)
+    assert.match(early, /reviews 0/u)
+    assert.match(early, /not delivered/u)
+
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const later = (workflowStatus(ctx, id) as { summary: string }).summary
+    assert.match(later, /tasks 1\/1/u)
+    // The counts move with the record; nothing here is written by whoever reports it.
+    assert.notEqual(early, later)
+  } finally {
+    close()
+  }
+})

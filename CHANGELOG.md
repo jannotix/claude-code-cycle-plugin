@@ -3,6 +3,30 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] — 2026-08-28
+
+### Fixed
+
+- A governed run stopped at its first line whenever the reply to `start` came back without the
+  workflow identifier. The control plane had started the workflow and recorded it; the run refused
+  to continue without an id, correctly, and ended — leaving a workflow nobody was driving and a
+  caller with nothing to report but its own impression. Every attempt to certify a complete cycle
+  hit this. The identifier is now read back from the plane when the reply lacks it, which is the
+  strategy already recorded for the relay's unreliability, applied to the one reply that had been
+  exempt from it.
+
+### Added
+
+- `status` returns a `summary` line built from the record — route, state, tasks completed, reviews,
+  arbitrations, repair budget, and whether anything was delivered — and the reporting skills quote
+  it verbatim. A run stopped in delivery on the quick route with no reviews had been reported as
+  "completed, full cycle, seven agents"; the plane cannot stop a caller paraphrasing, but it can
+  hand it a sentence that is either quoted exactly or visibly not quoted at all.
+- The role guard counts whether it could attribute a role, and `/cycle:doctor` reports a long run of
+  calls with none recognised. The second of the three separation layers reads fields the host
+  supplies; if those are renamed it recognises nothing and stops being a boundary without failing.
+  Two integers, no paths and no payload content, are enough to make that silence visible.
+
 ## [1.0.10] — 2026-08-27
 
 ### Fixed

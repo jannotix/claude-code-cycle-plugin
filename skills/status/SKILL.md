@@ -9,6 +9,12 @@ Report workflow state: $ARGUMENTS
    only if `$ARGUMENTS` names one; otherwise the latest workflow in this project is reported.
 2. If `found` is false, say there is no workflow in this project and stop.
 3. Report, in this order:
+   - **`summary`** — quote it **verbatim, on its own line, before anything else you say about the
+     run**. It is built from the record: the route, the state, how many tasks completed, how many
+     reviews and arbitrations exist, the repair budget, and whether anything was delivered. A run
+     stopped in delivery on the quick route with no reviews has been described as "completed, full
+     cycle, seven agents", and work done outside the cycle entirely has been described as ready.
+     Your account of a run is not evidence of it; this line is what the plane recorded.
    - **`state`** and **`mode`** — where it is and which route it took
    - **`pausedBecause`**, if it is not null — say it verbatim, before anything else about the state
    - **`repair`** — cycles used of the budget

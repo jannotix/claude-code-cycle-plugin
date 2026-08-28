@@ -10,6 +10,10 @@ Reconcile, then continue: $ARGUMENTS
    reconciled.
 2. Report the returned `state`, the repair budget, and the `next` line **verbatim**. It says what
    has to happen, and guessing something else is how a half-delivered candidate gets re-run.
+   Where the answer carries a `summary`, quote that line first and exactly, before any prose of
+   your own: it is built from the record, and a run stopped in delivery on the quick route with no
+   reviews has been reported as "completed, full cycle, seven agents" by a caller writing from
+   impression rather than from the answer in front of it.
 3. If `recovered` is not null, say how many files a delivery interrupted by a crash finished
    writing.
 4. If `pausedBecause` is not null, say it verbatim before anything else about the state. A workflow

@@ -1,7 +1,7 @@
 import { constants } from "node:fs"
 import { access, mkdir, readFile, stat, statfs } from "node:fs/promises"
 import { freemem } from "node:os"
-import { isAbsolute, relative } from "node:path"
+import { isAbsolute, join, relative } from "node:path"
 
 import { INHERIT, ROLES, type Configuration, type Role } from "./config.ts"
 import { probeVersion, type ExecutableKind } from "./exec.ts"
@@ -84,6 +84,22 @@ export interface DoctorReport {
   readonly version: string
 }
 
+/** Best-effort: a diagnostic that fails because its own counter file is missing tells nobody anything. */
+async function guardAttribution(
+  dataDirectory: string,
+): Promise<{ attributed: number; unattributed: number } | null> {
+  try {
+    const raw = await readFile(join(dataDirectory, "guard-attribution.json"), "utf8")
+    const parsed = JSON.parse(raw) as { attributed?: number; unattributed?: number }
+    return {
+      attributed: Number(parsed.attributed ?? 0),
+      unattributed: Number(parsed.unattributed ?? 0),
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function diagnose(
   cycle: Runtime,
   version: string,
@@ -135,6 +151,24 @@ export async function diagnose(
       message:
         `These options are set but this build does not read them, so they change nothing: ` +
         `${configuration.unknown.join(", ")}.`,
+      severity: "warn",
+    })
+  }
+
+  // Layer two of the separation of powers identifies a role from fields the host supplies. If those
+  // fields are renamed it recognises nothing, treats every call as the user's own session, and stops
+  // being a boundary without failing — which is exactly the kind of silence this product exists to
+  // refuse. The guard counts what it attributed; a long run of calls with no role recognised is what
+  // that blindness looks like from outside.
+  const attribution = await guardAttribution(storage.dataDirectory)
+  if (attribution !== null && attribution.unattributed >= 20 && attribution.attributed === 0) {
+    findings.push({
+      code: "guard.unattributed",
+      message:
+        `The role guard has seen ${attribution.unattributed} tool calls and recognised a Cycle ` +
+        "role in none of them. Either no governed cycle has run on this installation, or the host " +
+        "changed the payload fields the guard reads and the second of the three separation layers " +
+        "is no longer enforcing anything. The first and third layers do not depend on it.",
       severity: "warn",
     })
   }

@@ -20,7 +20,7 @@ import { runProof, type ProofRequest } from "../evidence/proof.ts"
 import { loadEvidence, recordEvidence } from "../store/evidence.ts"
 import { latestCheckpoint, signCheckpoint, verifyCheckpoints } from "../store/checkpoints.ts"
 import { appendHistory, lastEvent, readHistory, verifyHistory } from "../store/history.ts"
-import type { Database } from "../store/database.ts"
+import type { Database, Row } from "../store/database.ts"
 import { goalOfWorkflow } from "../store/goals.ts"
 import { newId } from "../store/ids.ts"
 import {
@@ -168,6 +168,38 @@ export function startWorkflow(
   }
 }
 
+/**
+ * One line, built from the record, that says what actually happened. It exists because the layer
+ * that tells the user about a run is prose written by a model, and prose drifts: a workflow stopped
+ * in delivery on the quick route with no reviews has been reported as "completed, full cycle, seven
+ * agents", and work done outside the cycle entirely has been reported as ready. The plane cannot
+ * stop a caller paraphrasing, but it can hand it a sentence that is either quoted exactly or
+ * visibly not quoted at all.
+ */
+function recordSummary(database: Database, workflow: StoredWorkflow): string {
+  const counted = (table: string, column: string): number => {
+    const row = database.get<Row>(
+      `select count(*) as total from ${table} where ${column} = ?`,
+      workflow.id,
+    )
+    return Number(row?.["total"] ?? 0)
+  }
+
+  const tasks = loadTasks(database, workflow.id)
+  const done = tasks.filter((task) => task.state === "completed").length
+  const delivered = counted("deliveries", "workflow_id") > 0
+
+  return [
+    `route ${workflow.mode ?? "unrouted"}`,
+    `state ${workflow.state}`,
+    `tasks ${done}/${tasks.length}`,
+    `reviews ${counted("reviews", "workflow_id")}`,
+    `arbitrations ${counted("arbitrations", "workflow_id")}`,
+    `repair ${workflow.repairCycles}/${workflow.maxRepairCycles}`,
+    delivered ? "delivered" : "not delivered",
+  ].join(" · ")
+}
+
 export function workflowStatus(context: ServiceContext, workflowId?: string): unknown {
   const workflow =
     workflowId === undefined
@@ -186,6 +218,8 @@ export function workflowStatus(context: ServiceContext, workflowId?: string): un
     pausedBecause: pausedBecause(context, workflow),
     repair: { max: workflow.maxRepairCycles, used: workflow.repairCycles },
     requestDigest: request?.digest ?? null,
+    // Quoted verbatim by every skill that reports a run, so a paraphrase is visible as one.
+    summary: recordSummary(context.database, workflow),
     // Which model each role is set to run on, so "were my models used" is a question the plane
     // answers rather than one the user has to reconstruct from a transcript.
     roles: roleModels(context.configuration),

@@ -85,6 +85,24 @@ export function startWorkflow(context, request, affectedPaths, preference, now =
         workflowId: id,
     };
 }
+function recordSummary(database, workflow) {
+    const counted = (table, column) => {
+        const row = database.get(`select count(*) as total from ${table} where ${column} = ?`, workflow.id);
+        return Number(row?.["total"] ?? 0);
+    };
+    const tasks = loadTasks(database, workflow.id);
+    const done = tasks.filter((task) => task.state === "completed").length;
+    const delivered = counted("deliveries", "workflow_id") > 0;
+    return [
+        `route ${workflow.mode ?? "unrouted"}`,
+        `state ${workflow.state}`,
+        `tasks ${done}/${tasks.length}`,
+        `reviews ${counted("reviews", "workflow_id")}`,
+        `arbitrations ${counted("arbitrations", "workflow_id")}`,
+        `repair ${workflow.repairCycles}/${workflow.maxRepairCycles}`,
+        delivered ? "delivered" : "not delivered",
+    ].join(" · ");
+}
 export function workflowStatus(context, workflowId) {
     const workflow = workflowId === undefined
         ? latestWorkflow(context.database, context.projectId)
@@ -100,6 +118,7 @@ export function workflowStatus(context, workflowId) {
         pausedBecause: pausedBecause(context, workflow),
         repair: { max: workflow.maxRepairCycles, used: workflow.repairCycles },
         requestDigest: request?.digest ?? null,
+        summary: recordSummary(context.database, workflow),
         roles: roleModels(context.configuration),
         state: workflow.state,
         tasks: loadTasks(context.database, workflow.id).map((task) => ({
