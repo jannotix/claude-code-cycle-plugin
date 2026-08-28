@@ -17,6 +17,8 @@ export const ALLOWED = [
   // The artifact bundles a parser runtime and twelve grammars. Their licence requires the notice
   // to travel with every copy, so it ships or the copy is not licensed.
   { kind: "file", path: "THIRD-PARTY-NOTICES.md" },
+  // A bill of materials that stays behind in the repository describes an artifact nobody has.
+  { kind: "file", path: "sbom.cdx.json" },
   { kind: "file", path: "README.md" },
   { kind: "file", path: "CHANGELOG.md" },
   { kind: "file", path: "SECURITY.md" },

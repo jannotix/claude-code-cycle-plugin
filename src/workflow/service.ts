@@ -111,6 +111,20 @@ export function startWorkflow(
   const text = request.trim()
   if (!text) throw new WorkflowError("a workflow needs the user's exact request")
 
+  // A caller once handed over its whole argument list as the request:
+  // `request="add a discount..." workflowId="e84cde16-..."`. That opened a second workflow on a
+  // mangled sentence and orphaned the real one, and the arbiter would have judged the delivered
+  // work against the serialisation rather than against what the user asked for. Nothing legitimate
+  // begins this way, so it is refused rather than tidied up: a request the plane silently repaired
+  // is a request nobody can be held to.
+  if (/^request\s*=/iu.test(text)) {
+    throw new WorkflowError(
+      "that request is an argument list, not a request: it begins with `request=`. Pass the user's " +
+        "sentence itself as `request`. The arbiter judges the delivered work against this text, so " +
+        "a serialisation here would be judged literally.",
+    )
+  }
+
   // A relayed start whose response was lost comes back as an identical call. Rejoining the run it
   // already created is the only safe answer: a second workflow would fork the work, and both halves
   // would look healthy while neither was the whole.

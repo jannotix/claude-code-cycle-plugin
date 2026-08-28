@@ -1,0 +1,84 @@
+name: check
+
+# What can be proved without a Claude Code installation and without spending on models: the types,
+# the suite, the packaged artifact and its file list. The certification matrix needs an installed
+# CLI, an authenticated account and real models, so it stays a deliberate act on a real machine and
+# is recorded in documentation/certification-*.json rather than asserted here. A pipeline that
+# claimed to certify what it cannot run would be the exact failure this product exists to refuse.
+
+on:
+  push:
+    branches: [main]
+    tags: ["cycle--v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both platforms the certification matrix covers. The store is built on node:sqlite and the
+        # suite runs TypeScript directly, so the Node version is a floor, not a preference.
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: production/package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: build
+        run: npm run build
+
+      - name: test
+        run: npm test
+
+      - name: package
+        run: npm run package
+
+      # The artifact is the thing users install, so what it contains is checked rather than assumed.
+      - name: the artifact carries its licences and no tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(ls build/cycle-*.zip)"
+          list="$(unzip -Z1 "$archive")"
+          for required in LICENSE NOTICE THIRD-PARTY-NOTICES.md .claude-plugin/plugin.json; do
+            echo "$list" | grep -qx "$required" || { echo "missing from the artifact: $required" >&2; exit 1; }
+          done
+          if echo "$list" | grep -Eq '(^|/)tests?/|\.test\.|\.map$'; then
+            echo "the artifact contains tests or source maps" >&2
+            exit 1
+          fi
+          echo "$archive: $(echo "$list" | wc -l) files, licences present, no tests"
+
+      - name: record the artifact digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(ls build/cycle-*.zip)"
+          sha256sum "$archive" | tee "$archive.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cycle-${{ matrix.os }}
+          path: |
+            production/build/cycle-*.zip
+            production/build/cycle-*.zip.sha256
+          if-no-files-found: error

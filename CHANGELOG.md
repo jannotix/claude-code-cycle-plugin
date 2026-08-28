@@ -3,6 +3,31 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.12] — 2026-08-28
+
+### Fixed
+
+- A resumed run restarted at execution with its reviewers unreachable. The reply to `start` reaches
+  the run through a relay agent, and one came back saying `state: "workflow_started"` — a state the
+  control plane has never been in — with `mode` missing altogether. `RANK` has no such stage, so the
+  run resumed at execution against tasks already completed, and an absent `mode` read as "not the
+  full route", so the two independent reviewers were never dispatched and a frozen, verified
+  candidate sat in `independent_reviews` while the plane refused the duplicate task reports. The
+  stage and the route are now read back from the plane, which is the rule this codebase already
+  wrote down for the relay and had applied everywhere except the reply that decides both.
+- A request that is really an argument list is refused. A caller passed
+  `request="add a discount..." workflowId="..."` where the request belongs, which opened a second
+  workflow on a mangled sentence, orphaned the real one, and would have had the arbiter judge the
+  delivered work against the serialisation.
+
+### Added
+
+- A CycloneDX bill of materials, generated from what is really in `vendor/` rather than from a list
+  kept beside it, shipped with the artifact and checked by `npm run check`. A grammar added without
+  its attribution fails the build instead of shipping unlisted.
+- A CI workflow that proves what can be proved without a Claude Code installation or model spend:
+  types, suite, artifact, and that the artifact carries its licences and no tests.
+
 ## [1.0.11] — 2026-08-28
 
 ### Fixed

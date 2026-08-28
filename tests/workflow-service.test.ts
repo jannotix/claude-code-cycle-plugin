@@ -1175,3 +1175,30 @@ test("status carries a summary built from the record, not from an account of it"
     close()
   }
 })
+
+// A resume once passed its whole argument list where the request belongs, which opened a second
+// workflow on `request="..." workflowId="..."` and left the real one orphaned. The arbiter judges
+// the delivered work against this text, so a serialisation here would have been judged literally.
+test("a request that is really an argument list is refused", () => {
+  const { close, ctx } = context()
+  try {
+    assert.throws(
+      () =>
+        startWorkflow(
+          ctx,
+          'request="add a percentage discount to the checkout total" workflowId="e84cde16"',
+          [],
+          "auto",
+        ),
+      /argument list/u,
+    )
+
+    // The sentence it wrapped is still an ordinary request.
+    const fine = startWorkflow(ctx, "add a percentage discount to the checkout total", [], "auto") as {
+      workflowId: string
+    }
+    assert.ok(fine.workflowId)
+  } finally {
+    close()
+  }
+})

@@ -46,6 +46,11 @@ export function startWorkflow(context, request, affectedPaths, preference, now =
     const text = request.trim();
     if (!text)
         throw new WorkflowError("a workflow needs the user's exact request");
+    if (/^request\s*=/iu.test(text)) {
+        throw new WorkflowError("that request is an argument list, not a request: it begins with `request=`. Pass the user's " +
+            "sentence itself as `request`. The arbiter judges the delivered work against this text, so " +
+            "a serialisation here would be judged literally.");
+    }
     const existing = activeWorkflowForRequest(context.database, context.projectId, requestDigestOf(text));
     if (existing !== undefined) {
         const decision = route(text, affectedPaths, preference);

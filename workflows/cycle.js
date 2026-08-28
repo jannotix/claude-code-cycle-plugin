@@ -293,6 +293,25 @@ if (!started?.workflowId) return { error: 'the workflow could not be started', s
 
 const id = started.workflowId
 confirmable = id
+
+// Two fields decide everything that follows: which stage the run resumes at, and whether the full
+// route's reviewers are reached at all. Both arrived through the relay, and the relay is a model.
+// One reply came back saying state "workflow_started" — a state the plane has never been in — with
+// mode absent, which turned a verified full-route workflow into a quick run restarting at
+// execution, with the two independent reviewers unreachable and the plane refusing the duplicate
+// task reports. Reading them back costs one cheap, repeatable call and makes the relay's accuracy
+// irrelevant to correctness, which is the rule this codebase already wrote down for it.
+const authoritative = await control(
+  `{"operation":"status","workflowId":${JSON.stringify(id)}}`,
+  'Route',
+)
+if (authoritative?.state) {
+  if (authoritative.state !== started.state || (authoritative.mode ?? null) !== (started.mode ?? null)) {
+    log(`the plane says ${authoritative.mode ?? 'unrouted'} · ${authoritative.state}`)
+  }
+  started = { ...started, mode: authoritative.mode ?? started.mode, state: authoritative.state }
+}
+
 const full = started.mode === 'full'
 log(`workflow ${id} · ${started.mode} route`)
 
