@@ -190,7 +190,8 @@ export function startWorkflow(
  * stop a caller paraphrasing, but it can hand it a sentence that is either quoted exactly or
  * visibly not quoted at all.
  */
-function recordSummary(database: Database, workflow: StoredWorkflow): string {
+function recordSummary(context: ServiceContext, workflow: StoredWorkflow): string {
+  const database = context.database
   const counted = (table: string, column: string): number => {
     const row = database.get<Row>(
       `select count(*) as total from ${table} where ${column} = ?`,
@@ -211,6 +212,10 @@ function recordSummary(database: Database, workflow: StoredWorkflow): string {
     `arbitrations ${counted("arbitrations", "workflow_id")}`,
     `repair ${workflow.repairCycles}/${workflow.maxRepairCycles}`,
     delivered ? "delivered" : "not delivered",
+    // A run whose plane received no option at all is running on the session model for every role,
+    // whatever the user configured. The doctor says so; a run said nothing, so a stale server was
+    // indistinguishable from a deliberate choice to inherit. It rides the line every report quotes.
+    ...(context.configuration.delivered === 0 ? ["no plugin option reached this process"] : []),
   ].join(" · ")
 }
 
@@ -233,7 +238,7 @@ export function workflowStatus(context: ServiceContext, workflowId?: string): un
     repair: { max: workflow.maxRepairCycles, used: workflow.repairCycles },
     requestDigest: request?.digest ?? null,
     // Quoted verbatim by every skill that reports a run, so a paraphrase is visible as one.
-    summary: recordSummary(context.database, workflow),
+    summary: recordSummary(context, workflow),
     // Which model each role is set to run on, so "were my models used" is a question the plane
     // answers rather than one the user has to reconstruct from a transcript.
     roles: roleModels(context.configuration),

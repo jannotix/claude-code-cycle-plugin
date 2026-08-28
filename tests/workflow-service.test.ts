@@ -1202,3 +1202,27 @@ test("a request that is really an argument list is refused", () => {
     close()
   }
 })
+
+// Five configured models, a stale server, and a run that said nothing: every role inherited the
+// session model and the only visible sign was haiku on the relay rows, which is its ordinary
+// default. The plane counts the options that reached it, so it can tell a deliberate inherit from a
+// configuration that never arrived — and it says so on the line every report quotes verbatim.
+test("a run whose plane received no option says so where it will be read", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "rename a helper", [], "quick") as { workflowId: string }
+    const undelivered = (workflowStatus(ctx, started.workflowId) as { summary: string }).summary
+    assert.match(undelivered, /no plugin option reached this process/u)
+
+    // An install that did receive its options says nothing extra: the note marks a failure, not a
+    // configuration that happens to leave roles on inherit.
+    const configured = {
+      ...ctx,
+      configuration: { ...ctx.configuration, delivered: 14 },
+    }
+    const fine = (workflowStatus(configured, started.workflowId) as { summary: string }).summary
+    assert.doesNotMatch(fine, /no plugin option reached/u)
+  } finally {
+    close()
+  }
+})

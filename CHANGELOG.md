@@ -3,6 +3,18 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.15] — 2026-08-28
+
+### Added
+
+- A run whose control plane received no plugin option at all says so, on the summary line every
+  report quotes verbatim and in the run's own log. Five configured models were being ignored because
+  the server serving that session had started before the options were set, and the only visible sign
+  was `haiku` on the relay rows — which is that role's ordinary default, so it read as normal. Every
+  role inheriting is a legitimate choice on an unconfigured install and a delivery failure on a
+  configured one; the plane counts the options that reached it, so it can tell the two apart and now
+  does, naming the remedy, which is a restart.
+
 ## [1.0.14] — 2026-08-28
 
 ### Fixed

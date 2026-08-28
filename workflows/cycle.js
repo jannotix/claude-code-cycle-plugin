@@ -340,6 +340,13 @@ if (started.roles) {
   efforts = { ...configuredEfforts, ...efforts }
 }
 log(`roles — ${ROLE_NAMES.map((name) => `${name}: ${models[name] ?? 'inherited'}`).join(', ')}`)
+// Every judging role inheriting is a legitimate choice on an unconfigured install and a delivery
+// failure on a configured one, and the two look identical from here. The plane knows which: it
+// counts the options that reached it. Saying so costs a line and turns a silent degradation into
+// one the user can act on, because the answer is a restart and nobody guesses that.
+if (started.summary && started.summary.includes('no plugin option reached this process')) {
+  log('no plugin option reached the control plane: every role is on the session model. Restart Claude Code.')
+}
 
 // What this project already learned, at the compact level. The architect decides what to read
 // in full; handing it every detail up front would cost more than the plan is worth.

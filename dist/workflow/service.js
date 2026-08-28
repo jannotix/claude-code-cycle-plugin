@@ -90,7 +90,8 @@ export function startWorkflow(context, request, affectedPaths, preference, now =
         workflowId: id,
     };
 }
-function recordSummary(database, workflow) {
+function recordSummary(context, workflow) {
+    const database = context.database;
     const counted = (table, column) => {
         const row = database.get(`select count(*) as total from ${table} where ${column} = ?`, workflow.id);
         return Number(row?.["total"] ?? 0);
@@ -106,6 +107,7 @@ function recordSummary(database, workflow) {
         `arbitrations ${counted("arbitrations", "workflow_id")}`,
         `repair ${workflow.repairCycles}/${workflow.maxRepairCycles}`,
         delivered ? "delivered" : "not delivered",
+        ...(context.configuration.delivered === 0 ? ["no plugin option reached this process"] : []),
     ].join(" · ");
 }
 export function workflowStatus(context, workflowId) {
@@ -123,7 +125,7 @@ export function workflowStatus(context, workflowId) {
         pausedBecause: pausedBecause(context, workflow),
         repair: { max: workflow.maxRepairCycles, used: workflow.repairCycles },
         requestDigest: request?.digest ?? null,
-        summary: recordSummary(context.database, workflow),
+        summary: recordSummary(context, workflow),
         roles: roleModels(context.configuration),
         state: workflow.state,
         tasks: loadTasks(context.database, workflow.id).map((task) => ({
