@@ -18,7 +18,7 @@
         "CLAUDE_PLUGIN_OPTION_ARBITER_EFFORT": "${user_config.arbiter_effort}",
         "CLAUDE_PLUGIN_OPTION_MAX_REPAIR_CYCLES": "${user_config.max_repair_cycles}",
         "CLAUDE_PLUGIN_OPTION_SECURITY_PROOFS": "${user_config.security_proofs}",
-      "CLAUDE_PLUGIN_OPTION_GATE_STRICTNESS": "${user_config.gate_strictness}",
+        "CLAUDE_PLUGIN_OPTION_GATE_STRICTNESS": "${user_config.gate_strictness}",
         "CLAUDE_PLUGIN_OPTION_DATA_DIR": "${user_config.data_dir}"
       }
     }

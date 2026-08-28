@@ -43,7 +43,6 @@ const STATE = {
     evidence: { type: 'array', items: { type: 'object' } },
     remaining: { type: 'array', items: { type: 'string' } },
     admitted: { type: 'boolean' },
-    reason: { type: 'string' },
     tasks: { type: 'array', items: { type: 'object' } },
     memories: { type: 'array', items: { type: 'object' } },
     requirements: { type: 'array', items: { type: 'string' } },
