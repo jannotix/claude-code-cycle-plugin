@@ -3,6 +3,21 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.13] — 2026-08-28
+
+### Fixed
+
+- Every reply from the control plane was passing through a schema that listed the fields a reply
+  might carry, and a schema that lists fields is a filter. Anything the plane learned to return after
+  that list was written was dropped on the way back: the per-role models, the capture capabilities
+  issued to reviewers, and the summary line. Three fixes that passed their tests therefore did
+  nothing in a real run, because the tests stub the relay and never meet the schema. A relay now
+  copies the plane's answer as one string and the run parses it, so no field can be filtered out and
+  a copy that will not parse reads as a lost reply, which the run already knows how to survive.
+- The dispatch harness stubbed the relay by handing back the plane's object directly, which is a
+  transport nobody has. It can now shape a reply the way a schema does, so a field the relay would
+  have dropped fails a test instead of shipping.
+
 ## [1.0.12] — 2026-08-28
 
 ### Fixed

@@ -25,30 +25,23 @@ parses them and refuses what it cannot read.`
 const CONTROL = 'mcp__plugin_cycle_control__workflow'
 const GOVERNOR = 'mcp__plugin_cycle_control__limits'
 
-const STATE = {
+/**
+ * What a relay is asked to produce. Not a field list: one string.
+ *
+ * It used to enumerate the fields a reply might carry, and a schema that enumerates fields is a
+ * filter. Anything the plane learned to return afterwards was dropped on the way back — the
+ * per-role models, the capture capabilities issued to reviewers, the summary line — so three fixes
+ * that passed their tests were inert in a real run, because the tests stub the relay and never meet
+ * the schema. Worse, a model made to fill a shape will fill it: one answered `state:
+ * "workflow_started"`, a state the plane has never been in, and left the declared workflowId empty.
+ *
+ * Copying one string is a job a small model can do, and a copy that fails to parse is a lost reply,
+ * which this script already knows how to survive.
+ */
+const RELAY = {
   type: 'object',
-  required: ['state'],
-  properties: {
-    state: { type: 'string' },
-    workflowId: { type: 'string' },
-    delivered: { type: 'array', items: { type: 'string' } },
-    aborted: { type: ['string', 'null'] },
-    mode: { type: 'string' },
-    decision: { type: 'string' },
-    refusal: { type: ['string', 'null'] },
-    mandatoryPassed: { type: 'boolean' },
-    reason: { type: 'string' },
-    reviewsReady: { type: 'boolean' },
-    candidate: { type: ['string', 'null'] },
-    evidence: { type: 'array', items: { type: 'object' } },
-    remaining: { type: 'array', items: { type: 'string' } },
-    admitted: { type: 'boolean' },
-    tasks: { type: 'array', items: { type: 'object' } },
-    memories: { type: 'array', items: { type: 'object' } },
-    requirements: { type: 'array', items: { type: 'string' } },
-    lastRefusal: { type: 'array', items: { type: 'object' } },
-    repair: { type: 'object' },
-  },
+  required: ['json'],
+  properties: { json: { type: 'string' } },
 }
 
 // The skill is told to pass an object and a model asked to build one sometimes passes the raw
@@ -116,18 +109,30 @@ async function relayed(make, attempts) {
 // Set once the workflow exists. Until then there is nothing to confirm a reply against.
 let confirmable = null
 
+/** Parses what a relay copied back. An unparseable copy is a lost reply, not a wrong one. */
+function decoded(answer) {
+  if (answer === null || answer === undefined) return null
+  if (typeof answer.json !== 'string') return typeof answer.state === 'string' ? answer : null
+  try {
+    const parsed = JSON.parse(answer.json)
+    return parsed !== null && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 function relayCall(instruction, phaseName) {
   return relayed(() => agent(
-    `Call ${CONTROL} exactly once with these arguments and return its result verbatim as JSON:\n${instruction}`,
+    `Call ${CONTROL} exactly once with these arguments. Then return its result as one JSON string in the json field, copied character for character. Do not summarise it, do not add fields and do not leave any out:\n${instruction}`,
     {
       agentType: 'cycle:operator',
       effort: 'low',
       label: 'control',
       phase: phaseName,
-      schema: STATE,
+      schema: RELAY,
       ...(models.operator ? { model: models.operator } : {}),
     },
-  ), retryable(instruction) ? 2 : 1)
+  ), retryable(instruction) ? 2 : 1).then(decoded)
 }
 
 /**
@@ -151,16 +156,16 @@ async function control(instruction, phaseName) {
 // `admit` takes a lease. Asking twice would take two.
 function governor(instruction, phaseName) {
   return relayed(() => agent(
-    `Call ${GOVERNOR} exactly once with these arguments and return its result verbatim as JSON:\n${instruction}`,
+    `Call ${GOVERNOR} exactly once with these arguments. Then return its result as one JSON string in the json field, copied character for character. Do not summarise it, do not add fields and do not leave any out:\n${instruction}`,
     {
       agentType: 'cycle:operator',
       effort: 'low',
       label: 'limits',
       phase: phaseName,
-      schema: STATE,
+      schema: RELAY,
       ...(models.operator ? { model: models.operator } : {}),
     },
-  ), 1)
+  ), 1).then(decoded)
 }
 
 // A role is not retried. Re-running an executor that already wrote part of its task would be a
