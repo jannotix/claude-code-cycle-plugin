@@ -3,6 +3,18 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] — 2026-08-28
+
+### Fixed
+
+- An arbiter was sent to judge with empty hands. The call that fetches the recorded evidence and the
+  requirement identifiers is a pure read, but it was not among the retryable operations, so a lost
+  reply became `[]` rather than a second attempt — and `recorded?.evidence ?? []` cannot tell a
+  candidate with no evidence from a read that failed. The arbiter said so in its own finding, "no
+  recorded evidence or reviews were supplied", approved work the security reviewer had rejected, and
+  had its verdict refused for citing no requirements. The read is retried now, and a read that never
+  comes back pauses the run instead of judging without it.
+
 ## [1.0.13] — 2026-08-28
 
 ### Fixed

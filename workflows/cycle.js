@@ -84,7 +84,9 @@ const preference = input.preference ?? 'auto'
 // the exact failure this is here to prevent. `start` is on the list because it is idempotent by
 // construction: it rejoins the workflow already open for the same request rather than making a
 // second one. The others read and change nothing.
-const RETRYABLE = new Set(['start', 'status', 'recall'])
+// Pure reads: repeating one costs a call and changes nothing. `evidence` belongs here and did not,
+// so a lost reply became an empty evidence list instead of a second attempt.
+const RETRYABLE = new Set(['evidence', 'recall', 'start', 'status'])
 
 /** Capture capabilities by role, held only long enough to hand each to the role it was issued to. */
 const capabilities = {}
@@ -112,7 +114,9 @@ let confirmable = null
 /** Parses what a relay copied back. An unparseable copy is a lost reply, not a wrong one. */
 function decoded(answer) {
   if (answer === null || answer === undefined) return null
-  if (typeof answer.json !== 'string') return typeof answer.state === 'string' ? answer : null
+  // An answer that is already the plane's object passes through: not every reply carries a state,
+  // and demanding one threw away the evidence list, which has no state field at all.
+  if (typeof answer.json !== 'string') return typeof answer === 'object' ? answer : null
   try {
     const parsed = JSON.parse(answer.json)
     return parsed !== null && typeof parsed === 'object' ? parsed : null
@@ -496,6 +500,18 @@ while (cycles < 5) {
     `{"operation":"evidence","workflowId":${JSON.stringify(id)}}`,
     'Verification',
   )
+  // A read that failed is not a candidate with no evidence. Treating the two as one sent an arbiter
+  // to judge with empty hands: it said so in its own finding, approved work a reviewer had rejected,
+  // and the plane refused the verdict for citing no requirements — a whole round spent on a
+  // question nobody could answer. A judge with nothing in front of it does not judge.
+  if (recorded === null || recorded === undefined) {
+    log('the recorded evidence could not be read; pausing rather than judging without it')
+    await control(
+      `{"operation":"control","controlOperation":"pause","workflowId":${JSON.stringify(id)},"reason":"the recorded evidence could not be read"}`,
+      'Verification',
+    )
+    return { outcome, stoppedAt: 'evidence', workflowId: id }
+  }
   const evidence = recorded?.evidence ?? []
   // The identifiers a verdict may cite. Deciding "every requirement in the plan" without being told
   // what the plan's requirements are leaves a reviewer inventing them, and the plane refuses the
