@@ -106,7 +106,14 @@ export function renderDoctor(report: DoctorReport): string {
   lines.push("Policy")
   lines.push(row("gate strictness", report.configuration.gateStrictness))
   lines.push(row("repair cycles", String(report.configuration.maxRepairCycles)))
-  lines.push(row("options delivered", String(report.configuration.delivered)))
+  lines.push(
+    row(
+      "options delivered",
+      report.configuration.blank > 0
+        ? `${report.configuration.delivered} (${report.configuration.blank} arrived empty)`
+        : String(report.configuration.delivered),
+    ),
+  )
   lines.push("")
 
   lines.push("Findings")

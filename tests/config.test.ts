@@ -20,6 +20,30 @@ test("an unconfigured install inherits the session model for every judging role"
   assert.deepEqual(config.invalid, [])
 })
 
+// Fourteen option variables reached a live install and every judging role still ran on the session
+// model: the host had resolved all of them to an empty string. Counting the keys called that a full
+// delivery, so the warning written to catch exactly this stayed silent. A variable carrying nothing
+// delivers nothing, and the two shapes have to stay distinguishable to be worth reporting.
+test("option variables that arrive empty are not counted as delivered", () => {
+  const hollow = option({ ARBITER_MODEL: "", ARCHITECT_MODEL: "", EXECUTOR_MODEL: "   " })
+
+  const config = readConfiguration(hollow)
+
+  assert.equal(config.delivered, 0)
+  assert.equal(config.blank, 3)
+  assert.equal(config.roles.architect.model, "inherit")
+
+  // A real value is a delivery; only the empty ones stay uncounted.
+  const partial = readConfiguration({
+    ...hollow,
+    CLAUDE_PLUGIN_OPTION_ARCHITECT_MODEL: "claude-opus-5",
+  })
+
+  assert.equal(partial.delivered, 1)
+  assert.equal(partial.blank, 2)
+  assert.equal(partial.roles.architect.model, "claude-opus-5")
+})
+
 test("role models and efforts come from user configuration", () => {
   const config = readConfiguration(
     option({

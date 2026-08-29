@@ -41,8 +41,14 @@ export interface Configuration {
   readonly securityProofs: boolean
   /** Options that were set but that this build does not read, so they change nothing. */
   readonly unknown: readonly string[]
-  /** How many option variables the host actually delivered to this process. */
+  /**
+   * How many option variables reached this process carrying a value. A host that substitutes fills
+   * them in, so one that arrives empty carries no more configuration than one that never arrived,
+   * and counting it would report a delivery that did not happen.
+   */
   readonly delivered: number
+  /** Option variables that arrived empty: present, but carrying nothing. */
+  readonly blank: number
 }
 
 const EFFORTS: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"]
@@ -92,9 +98,11 @@ export function readConfiguration(environment: NodeJS.ProcessEnv = process.env):
     }
   }
 
-  const delivered = Object.keys(environment).filter((key) => key.startsWith(PREFIX)).length
+  const present = Object.entries(environment).filter(([key]) => key.startsWith(PREFIX))
+  const delivered = present.filter(([, value]) => (value ?? "").trim() !== "").length
 
   return {
+    blank: present.length - delivered,
     dataDirectory: option(environment, "DATA_DIR") || undefined,
     delivered,
     gateStrictness: readStrictness(environment, invalid),

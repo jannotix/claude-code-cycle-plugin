@@ -3,6 +3,20 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.16] - 2026-08-29
+
+### Fixed
+
+- The counter behind that warning counted the option variables present, not the values in them. A
+  host that resolves every option to an empty string therefore reported a full delivery, and the
+  warning written to catch exactly this case stayed silent while five configured models were
+  ignored. Delivery is now counted by the values that arrived, and the report distinguishes an
+  install that was never configured from one whose values did not survive substitution, because the
+  two need different remedies.
+- The stale-configuration warning compared two figures that had both been rounded down to whole
+  minutes, so during a server's first minute the comparison read `0 < 0` and the warning vanished
+  at the moment a settings edit was freshest. It compares the instants now.
+
 ## [1.0.15] — 2026-08-28
 
 ### Added

@@ -107,7 +107,13 @@ function recordSummary(context, workflow) {
         `arbitrations ${counted("arbitrations", "workflow_id")}`,
         `repair ${workflow.repairCycles}/${workflow.maxRepairCycles}`,
         delivered ? "delivered" : "not delivered",
-        ...(context.configuration.delivered === 0 ? ["no plugin option reached this process"] : []),
+        ...(context.configuration.delivered === 0
+            ? [
+                context.configuration.blank > 0
+                    ? `no plugin option reached this process with a value (${context.configuration.blank} arrived empty)`
+                    : "no plugin option reached this process",
+            ]
+            : []),
     ].join(" · ");
 }
 export function workflowStatus(context, workflowId) {

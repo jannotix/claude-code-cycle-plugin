@@ -1222,6 +1222,16 @@ test("a run whose plane received no option says so where it will be read", () =>
     }
     const fine = (workflowStatus(configured, started.workflowId) as { summary: string }).summary
     assert.doesNotMatch(fine, /no plugin option reached/u)
+
+    // The other shape of the same failure: the variables arrived, carrying nothing. The note keeps
+    // the opening words the workflow script matches on and adds what it actually found.
+    const hollow = {
+      ...ctx,
+      configuration: { ...ctx.configuration, blank: 14, delivered: 0 },
+    }
+    const empty = (workflowStatus(hollow, started.workflowId) as { summary: string }).summary
+    assert.match(empty, /no plugin option reached this process/u)
+    assert.match(empty, /14 arrived empty/u)
   } finally {
     close()
   }

@@ -215,7 +215,14 @@ function recordSummary(context: ServiceContext, workflow: StoredWorkflow): strin
     // A run whose plane received no option at all is running on the session model for every role,
     // whatever the user configured. The doctor says so; a run said nothing, so a stale server was
     // indistinguishable from a deliberate choice to inherit. It rides the line every report quotes.
-    ...(context.configuration.delivered === 0 ? ["no plugin option reached this process"] : []),
+    // The workflow script matches on this prefix, so both shapes of the failure keep it verbatim.
+    ...(context.configuration.delivered === 0
+      ? [
+          context.configuration.blank > 0
+            ? `no plugin option reached this process with a value (${context.configuration.blank} arrived empty)`
+            : "no plugin option reached this process",
+        ]
+      : []),
   ].join(" · ")
 }
 

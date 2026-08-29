@@ -46,8 +46,10 @@ export function readConfiguration(environment = process.env) {
             model: readModel(environment, modelKey, DEFAULT_MODEL[role], invalid),
         };
     }
-    const delivered = Object.keys(environment).filter((key) => key.startsWith(PREFIX)).length;
+    const present = Object.entries(environment).filter(([key]) => key.startsWith(PREFIX));
+    const delivered = present.filter(([, value]) => (value ?? "").trim() !== "").length;
     return {
+        blank: present.length - delivered,
         dataDirectory: option(environment, "DATA_DIR") || undefined,
         delivered,
         gateStrictness: readStrictness(environment, invalid),

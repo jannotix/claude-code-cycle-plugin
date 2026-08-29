@@ -36,6 +36,7 @@ export interface PackageManager {
 
 export interface DoctorReport {
   readonly configuration: {
+    readonly blank: number
     readonly delivered: number
     readonly gateStrictness: string
     readonly maxRepairCycles: number
@@ -122,8 +123,13 @@ export async function diagnose(
   // settings file is answering with what was true then. Saying it only when it is true keeps it out
   // of the reader's way the rest of the time, and puts a measurement where a guess has twice gone
   // the wrong way.
-  const settingsChanged = await changedMinutesAgo(settingsPath(environment))
-  if (settingsChanged !== null && settingsChanged < runtime.startedMinutesAgo) {
+  // Both sides used to be floored to whole minutes, so during this process's first minute the
+  // comparison read 0 < 0 and the warning disappeared exactly when a settings edit was freshest.
+  // Comparing the instants keeps it honest at any age.
+  const settingsWritten = await writtenAt(settingsPath(environment))
+  const processStarted = Date.now() - process.uptime() * 1000
+  if (settingsWritten !== null && settingsWritten > processStarted) {
+    const settingsChanged = Math.max(0, Math.floor((Date.now() - settingsWritten) / 60_000))
     findings.push({
       code: "runtime.stale_configuration",
       message:
@@ -139,8 +145,12 @@ export async function diagnose(
     findings.push({
       code: "config.undelivered",
       message:
-        "No plugin option reached this process. Anything configured for this plugin is not being " +
-        "applied: every role is running on the session model and the defaults below are in force.",
+        (configuration.blank > 0
+          ? `All ${configuration.blank} option variables reached this process empty, so the host ` +
+            "resolved none of the values configured for this plugin. "
+          : "No plugin option reached this process. ") +
+        "Nothing configured here is being applied: every role is running on the session model and " +
+        "the defaults below are in force.",
       severity: "warn",
     })
   }
@@ -187,6 +197,7 @@ export async function diagnose(
 
   return {
     configuration: {
+      blank: configuration.blank,
       delivered: configuration.delivered,
       gateStrictness: configuration.gateStrictness,
       maxRepairCycles: configuration.maxRepairCycles,
@@ -299,10 +310,10 @@ function probeStore(cycle: Runtime, findings: Finding[]): DoctorReport["store"] 
 }
 
 /** How long ago a file was last written, or null when it cannot be read. */
-async function changedMinutesAgo(path: string): Promise<number | null> {
+/** When the file was last written, or null when it is not there to be read. */
+async function writtenAt(path: string): Promise<number | null> {
   try {
-    const changed = (await stat(path)).mtimeMs
-    return Math.floor((Date.now() - changed) / 60_000)
+    return (await stat(path)).mtimeMs
   } catch {
     return null
   }

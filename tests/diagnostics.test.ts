@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, utimes, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 
@@ -54,6 +54,31 @@ async function report(subject: Case): Promise<DoctorReport> {
 }
 
 const codes = (result: DoctorReport): string[] => result.findings.map((finding) => finding.code)
+
+// The counter behind this finding used to count the variables present rather than the values in
+// them, so a host that resolved every option to an empty string reported a full delivery and this
+// warning never fired. Doctor now names which of the two shapes it found, because the remedies
+// differ: one install was never configured, the other was configured and the values did not arrive.
+test("options that arrive empty are reported as an undelivered configuration", async () => {
+  const local = mkdtempSync(join(tmpdir(), "cycle-doctor-local-"))
+  const subject = isolated(
+    { ARBITER_MODEL: "", ARCHITECT_MODEL: "", EXECUTOR_MODEL: "" },
+    { CLAUDE_PLUGIN_OPTION_DATA_DIR: "", LOCALAPPDATA: local },
+  )
+  try {
+    const result = await report(subject)
+
+    assert.ok(codes(result).includes("config.undelivered"))
+    const finding = result.findings.find((entry) => entry.code === "config.undelivered")
+    assert.ok(finding?.message.includes("reached this process empty"))
+    assert.equal(result.configuration.delivered, 0)
+    assert.equal(result.configuration.blank, 4)
+    assert.ok(renderDoctor(result).includes("0 (4 arrived empty)"))
+  } finally {
+    subject.close()
+    rmSync(local, { force: true, recursive: true })
+  }
+})
 
 // Certification 11.7: no gateway, no configuration, nothing to fix.
 test("an unconfigured install with no gateway reports no failure", async () => {
@@ -207,18 +232,28 @@ test("the report says how long the answering process has been up", async () => {
 
 // The judgement belongs in a finding that fires when it is true, not in the value column where it
 // reads as commentary riding along in tool output — which is how a caller described it.
-test("a server older than the settings it reports says so, once", async () => {
+test("a server older than the settings it reports says so", async () => {
   const subject = isolated()
   try {
     const settings = settingsPath(subject.environment)
     await mkdir(dirname(settings), { recursive: true })
     await writeFile(settings, "{}", "utf8")
 
-    const result = await report(subject)
-    const finding = result.findings.find((entry) => entry.code === "runtime.stale_configuration")
+    // Written after this process started: the server is answering with the configuration as it
+    // stood before the edit, which is the whole reason the finding exists.
+    const stale = await report(subject)
+    assert.ok(stale.findings.some((entry) => entry.code === "runtime.stale_configuration"))
 
-    // This process started before the file was written, so the report must stay quiet.
-    assert.equal(finding, undefined)
+    // A settings file older than the process is what a restarted server sees, and it must stay
+    // quiet. Two days back keeps the case independent of how long the suite has been running.
+    const before = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    await utimes(settings, before, before)
+
+    const restarted = await report(subject)
+    assert.equal(
+      restarted.findings.find((entry) => entry.code === "runtime.stale_configuration"),
+      undefined,
+    )
   } finally {
     subject.close()
   }

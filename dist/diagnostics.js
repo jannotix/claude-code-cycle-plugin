@@ -39,8 +39,10 @@ export async function diagnose(cycle, version, environment = process.env) {
     for (const problem of configuration.invalid) {
         findings.push({ code: "config.invalid", message: problem, severity: "error" });
     }
-    const settingsChanged = await changedMinutesAgo(settingsPath(environment));
-    if (settingsChanged !== null && settingsChanged < runtime.startedMinutesAgo) {
+    const settingsWritten = await writtenAt(settingsPath(environment));
+    const processStarted = Date.now() - process.uptime() * 1000;
+    if (settingsWritten !== null && settingsWritten > processStarted) {
+        const settingsChanged = Math.max(0, Math.floor((Date.now() - settingsWritten) / 60_000));
         findings.push({
             code: "runtime.stale_configuration",
             message: `The settings file was written ${settingsChanged} minutes ago and this server started ` +
@@ -53,8 +55,12 @@ export async function diagnose(cycle, version, environment = process.env) {
     if (configuration.delivered === 0) {
         findings.push({
             code: "config.undelivered",
-            message: "No plugin option reached this process. Anything configured for this plugin is not being " +
-                "applied: every role is running on the session model and the defaults below are in force.",
+            message: (configuration.blank > 0
+                ? `All ${configuration.blank} option variables reached this process empty, so the host ` +
+                    "resolved none of the values configured for this plugin. "
+                : "No plugin option reached this process. ") +
+                "Nothing configured here is being applied: every role is running on the session model and " +
+                "the defaults below are in force.",
             severity: "warn",
         });
     }
@@ -89,6 +95,7 @@ export async function diagnose(cycle, version, environment = process.env) {
     }
     return {
         configuration: {
+            blank: configuration.blank,
             delivered: configuration.delivered,
             gateStrictness: configuration.gateStrictness,
             maxRepairCycles: configuration.maxRepairCycles,
@@ -178,10 +185,9 @@ function probeStore(cycle, findings) {
         schemaVersion: database.schemaVersion,
     };
 }
-async function changedMinutesAgo(path) {
+async function writtenAt(path) {
     try {
-        const changed = (await stat(path)).mtimeMs;
-        return Math.floor((Date.now() - changed) / 60_000);
+        return (await stat(path)).mtimeMs;
     }
     catch {
         return null;
