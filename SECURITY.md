@@ -41,4 +41,4 @@ before it reaches memory.
 
 ## Supported versions
 
-Version 1.0.10 is the current release. The current minor version receives security fixes.
+The current minor version receives security fixes. The releases are listed in [CHANGELOG.md](CHANGELOG.md); the newest entry there is the current one.

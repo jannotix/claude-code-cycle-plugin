@@ -12,11 +12,14 @@ final arbiter that judges against **your original request** — not the architec
 A candidate is delivered only when the arbiter approves it. A rejected candidate goes back for
 repair, up to five cycles.
 
-> **Version 1.0.0.** Every certification row applicable to Windows 11 and to Ubuntu 24.04 under WSL2
-> passes, the hand-checked ones included. Per-role providers ship unverified — see the changelog.
+> **Windows 11 and Ubuntu 24.04 under WSL2.** Every push runs the type check, the suite, the
+> packaged artifact and its file list on Windows and on Linux, and the shipped runtime is loaded on
+> the oldest Node the manifest supports. Native Linux and macOS are compatible but untested.
+> Per-role providers ship unverified — see the changelog.
 
 ```bash
 claude plugin marketplace add jannotix/claude-code-cycle-plugin
+claude plugin install cycle@cycle
 ```
 
 ## The problem
@@ -129,7 +132,7 @@ Different **providers** per role need an LLM gateway of your own, because Claude
 inherit the session provider. Cycle names a model per role; what answers is your infrastructure.
 `/cycle:models` reports what each role resolved to, which provider path carries it and what is
 billed — subscription or a credential — so five verdicts are never assumed to be independent when
-one model produced all five. [docs/multi-provider.md](docs/multi-provider.md) is a placeholder guide
+one model produced all five. [the multi-provider guide](https://github.com/jannotix/claude-code-cycle-plugin/blob/main/docs/multi-provider.md) is a placeholder guide
 to setting that up.
 
 Cycle never reads, stores or transmits a provider credential. It never configures a gateway, and it
@@ -168,7 +171,7 @@ The five role commands are **advisory**. None of them can approve or deliver: th
 inside a governed cycle, with a frozen candidate, real evidence and an independent arbiter. If a
 readiness check could approve, calling it directly would bypass the product.
 
-Every command is documented in [docs/manual.md](docs/manual.md).
+Every command is documented in [the manual](https://github.com/jannotix/claude-code-cycle-plugin/blob/main/docs/manual.md).
 
 ## Code graph
 

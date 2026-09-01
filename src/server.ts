@@ -46,6 +46,7 @@ import {
   mandatoryGatesPassed,
   recallForRequest,
   reconcile,
+  declareScope,
   freezeCandidate,
   reportTask,
   startWorkflow,
@@ -337,6 +338,7 @@ const WORKFLOW_OPERATIONS = [
   "status",
   "evidence",
   "submit_plan",
+  "declare_scope",
   "report_task",
   "freeze_candidate",
   "verify",
@@ -596,6 +598,7 @@ const workflowTool: ToolDefinition = {
     "submission without one is recorded as a self-report and carries no weight. " +
     "`run_proof` executes one security proof against a disposable copy of the candidate: supply " +
     "the proof source as `script` and write it so exit code 0 means the vulnerability was shown. " +
+    "`declare_scope` states, once and before any writing, the paths a quick-route change may write to: that route has no architect and therefore no plan, and reconciliation has nothing to compare the worktree against until it is declared. " +
     "`deliver` promotes the approved bytes and re-verifies them; `reconcile` resumes a workflow " +
     "after the application restarted; `history` reads the chain and verifies its signatures. " +
     "`control` carries an optional `reason` that classifies why it was issued — a provider that " +
@@ -612,6 +615,7 @@ const workflowTool: ToolDefinition = {
       kind: { enum: ["state", "history", "evidence"], type: "string" },
       operation: { enum: [...WORKFLOW_OPERATIONS], type: "string" },
       command: { maxLength: 4_096, type: "string" },
+      paths: { items: { type: "string" }, maxItems: 200, type: "array" },
       plan: { type: "object" },
       preference: { enum: ["auto", "quick", "full"], type: "string" },
       interpreter: { maxLength: 32, type: "string" },
@@ -667,6 +671,12 @@ const workflowTool: ToolDefinition = {
         return candidateEvidence(context, id())
       case "submit_plan":
         return submitPlan(context, id(), args["plan"])
+      case "declare_scope":
+        return declareScope(
+          context,
+          id(),
+          Array.isArray(args["paths"]) ? (args["paths"] as string[]) : [],
+        )
       case "report_task": {
         // Layer three reconciles against the worktree, not against the executor's summary, so the
         // change set is read here rather than taken from the caller.

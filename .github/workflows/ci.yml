@@ -25,17 +25,14 @@ jobs:
         # suite runs TypeScript directly, so the Node version is a floor, not a preference.
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "26"
           cache: npm
-          cache-dependency-path: production/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: install
         run: npm ci
@@ -75,10 +72,30 @@ jobs:
           archive="$(ls build/cycle-*.zip)"
           sha256sum "$archive" | tee "$archive.sha256"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cycle-${{ matrix.os }}
           path: |
-            production/build/cycle-*.zip
-            production/build/cycle-*.zip.sha256
+            build/cycle-*.zip
+            build/cycle-*.zip.sha256
           if-no-files-found: error
+
+  # `engines` names the oldest Node the shipped runtime supports, and node:sqlite is what sets it:
+  # the module is unflagged only from 22.13.0. A floor nothing ever runs on is a claim, so the built
+  # server is loaded on exactly that version here.
+  floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: the shipped runtime loads on the oldest supported Node
+        run: node --input-type=module -e "await import('./dist/store/database.js'); console.log('node:sqlite is available unflagged')"

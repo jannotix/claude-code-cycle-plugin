@@ -13,6 +13,7 @@ import { loadWorkflow } from "../src/store/workflows.ts"
 import {
   arbitrate,
   control,
+  declareScope,
   freezeCandidate,
   historyState,
   mandatoryGatesPassed,
@@ -898,17 +899,70 @@ test("a sibling directory sharing a prefix is not inside the scope", () => {
   }
 })
 
-test("the quick route has no plan, so reconciliation authorizes nothing and blocks nothing", () => {
+// The quick route skips the architect and both reviewers, so nobody assigns it a write scope. It
+// used to have no task at all, and reconciliation returns early with nothing to compare against
+// when a workflow has no tasks: every path passed. The cheaper route was quietly the unchecked one.
+// The executor now states its boundary before it writes, and the plane holds it to that.
+test("the quick route reconciles against the scope its executor declared", () => {
   const { close, ctx } = context()
   try {
-    const started = startWorkflow(ctx, "rename a helper", ["src/date.ts"], "quick") as {
-      workflowId: string
-    }
-    const reported = reportTask(ctx, started.workflowId, "task-1", "completed", "done", [
+    const started = startWorkflow(ctx, "rename a helper", [], "quick") as { workflowId: string }
+
+    // Reporting before the scope exists is refused, and says which step is missing rather than
+    // blocking each path in turn, which would read as the work being wrong.
+    const early = reportTask(ctx, started.workflowId, "task-1", "completed", "done", [
+      "src/date.ts",
+    ]) as { reason?: string; retry?: boolean }
+    assert.equal(early.retry, true)
+    assert.match(early.reason ?? "", /has not declared its write scope/u)
+
+    declareScope(ctx, started.workflowId, ["src/date.ts"])
+
+    const inside = reportTask(ctx, started.workflowId, "task-1", "completed", "done", [
       "src/date.ts",
     ]) as { state: string }
+    assert.equal(inside.state, "quick_execution")
 
-    assert.equal(reported.state, "quick_execution")
+    // A path outside the declaration is refused here exactly as it is on the full route. It runs on
+    // its own workflow because a violation moves the run into repair, which would mask the result.
+    const other = startWorkflow(ctx, "rename another helper", [], "quick") as { workflowId: string }
+    declareScope(ctx, other.workflowId, ["src/date.ts"])
+    const outside = reportTask(ctx, other.workflowId, "task-1", "completed", "done", [
+      "src/billing.ts",
+    ]) as { outOfScope?: string[] }
+    assert.deepEqual(outside.outOfScope, ["src/billing.ts"])
+  } finally {
+    close()
+  }
+})
+
+// A scope that could be widened after the fact to cover whatever was written would prove nothing.
+test("a quick-route scope is declared once and cannot be widened later", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "rename a helper", [], "quick") as { workflowId: string }
+    declareScope(ctx, started.workflowId, ["src/date.ts"])
+
+    assert.throws(
+      () => declareScope(ctx, started.workflowId, ["src/date.ts", "src/billing.ts"]),
+      /cannot be widened/u,
+    )
+    assert.throws(() => declareScope(ctx, started.workflowId, []), /at least one path/u)
+  } finally {
+    close()
+  }
+})
+
+// The full route gets its scopes from the architect, so a self-declared one there would be a way
+// around the plan rather than a substitute for it.
+test("a scope cannot be declared on the full route", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "add oauth login", ["src/auth.ts"], "auto") as {
+      workflowId: string
+    }
+
+    assert.throws(() => declareScope(ctx, started.workflowId, ["src/auth.ts"]), /quick route/u)
   } finally {
     close()
   }

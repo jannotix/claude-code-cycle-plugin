@@ -3,6 +3,39 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.17] - 2026-08-29
+
+### Fixed
+
+- The quick route delivered without any check on where it landed. It has no architect and therefore
+  no plan, and reconciliation returns early when a workflow has no task to reconcile against, so
+  every path passed: the cheaper route was quietly the unchecked one. A read-only role now names the
+  boundary before anything is written, the plane records it once and refuses to widen it, and a
+  quick report that lands outside it is blocked exactly as it is on the full route.
+- The advisor ran on the session model. Keyed under its own name it matched no configured role and
+  was dispatched with no model or effort at all, while every other role obeyed the configuration.
+- Continuous integration had never once succeeded. It ran every step in a `production/`
+  subdirectory that does not exist in the published repository, so it failed in under thirty
+  seconds without building or testing anything. Every step now runs at the root, the actions are
+  pinned by digest rather than by a tag that moves, and a separate job loads the built runtime on
+  the oldest Node the manifest declares.
+- `engines` claimed Node 22, but the store is built on `node:sqlite`, which is unflagged only from
+  22.13.0. The floor now says what the runtime actually needs, and the job above proves it.
+
+### Changed
+
+- The plugin is distributed as the packaged archive published with each release, verified by its
+  SHA-256, rather than as a copy of the development repository. What the packaging check verifies
+  and what an installation receives are now the same bytes.
+- The README's links to the manual and the multi-provider guide are absolute. Documentation is
+  deliberately kept out of the artifact, so relative links resolved to nothing for anyone reading
+  the archive rather than the repository.
+- The data directory option describes what the plugin does — a location outside anything the
+  application manages, so a history of delivered work survives uninstalling it.
+- The README installs the plugin as well as adding the marketplace, and states the platform
+  guarantee that continuous integration actually proves.
+- The security policy points at the changelog instead of naming a release that stops being current.
+
 ## [1.0.16] - 2026-08-29
 
 ### Fixed

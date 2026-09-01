@@ -6,6 +6,8 @@ export interface RoutingDecision {
   readonly critical: readonly string[]
   readonly mode: WorkflowMode
   readonly rationale: string
+  /** The paths the decision was made on. On the quick route they become the write scope. */
+  readonly scope: readonly string[]
   readonly userPromoted: boolean
 }
 
@@ -90,6 +92,7 @@ export function route(
       critical: [],
       mode: "full",
       rationale: "the full cycle was requested explicitly",
+      scope: [...affectedPaths],
       userPromoted: true,
     }
   }
@@ -115,6 +118,7 @@ export function route(
         critical.size === 0
           ? "the quick route was requested and no critical signal was found"
           : `the quick route was requested despite ${[...critical].join(", ")}`,
+      scope: paths,
       userPromoted: false,
     }
   }
@@ -126,6 +130,7 @@ export function route(
       critical.size === 0
         ? "no critical signal in the request or the affected paths"
         : `critical signals: ${[...critical].join(", ")}`,
+    scope: paths,
     userPromoted: false,
   }
 }

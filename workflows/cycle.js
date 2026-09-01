@@ -176,14 +176,19 @@ function governor(instruction, phaseName) {
 // second, unbudgeted attempt at work the plan authorized once; the caller pauses the workflow
 // instead, and /cycle:resume continues it deliberately.
 async function role(name, prompt, phaseName, schema) {
+  // The advisor is the executor's read-only half and assesses the same work, so it runs on the
+  // executor's settings. Keyed under its own name it matched no configured role and was dispatched
+  // with no model at all, which put it on the session model while every other role obeyed the
+  // configuration.
+  const configured = name === 'executor-advisor' ? 'executor' : name
   try {
     return await agent(prompt, {
       agentType: `cycle:${name}`,
       label: name,
       phase: phaseName,
       schema,
-      ...(models[name] ? { model: models[name] } : {}),
-      ...(efforts[name] ? { effort: efforts[name] } : {}),
+      ...(models[configured] ? { model: models[configured] } : {}),
+      ...(efforts[configured] ? { effort: efforts[configured] } : {}),
     })
   } catch {
     return null
@@ -222,6 +227,18 @@ const SNAPSHOT_NODE = {
     level: { type: ['integer', 'null'] },
     name: { type: 'string' },
     role: { type: 'string' },
+  },
+}
+
+// The quick route has no architect, so the boundary it works inside is named by a read-only role
+// before anything is written. A role that cannot write cannot widen a scope to cover what it has
+// already done, which is the property that makes the declaration worth recording.
+const SCOPE = {
+  type: 'object',
+  required: ['paths'],
+  additionalProperties: false,
+  properties: {
+    paths: { type: 'array', items: { type: 'string' } },
   },
 }
 
@@ -437,7 +454,7 @@ while (cycles < 5) {
     // carries the tasks. Deriving it from the start reply instead made a lost `mode` field mean
     // "quick", and a full-route run was then dispatched under a key no task owned: eight repair
     // cycles of scope violations, every one of them the executor doing correct work.
-    const tasks = current?.tasks?.length
+    let tasks = current?.tasks?.length
       ? current.tasks
       : current?.mode === 'quick'
         ? [{ key: 'task-1' }]
@@ -445,6 +462,33 @@ while (cycles < 5) {
     if (tasks === null) {
       log('the accepted tasks did not survive the relay — stopping rather than inventing one')
       return { outcome, stoppedAt: 'execution', workflowId: id }
+    }
+
+    // On the quick route nobody has assigned a scope yet. It is declared before the executor runs,
+    // by a role that cannot write, and the plane refuses to reconcile a quick report without one.
+    if (current?.mode === 'quick' && !tasks.some((task) => task.writeScopes?.length)) {
+      const bound = await role(
+        'executor-advisor',
+        `Name every file and directory this change may write to, as project-relative paths. ` +
+          `Do not write anything. Answer with paths only.
+
+Request: ${request}`,
+        'Execution',
+        SCOPE,
+      )
+      if (!bound) return providerUnavailable('executor-advisor', 'Execution')
+
+      const declared = await control(
+        `{"operation":"declare_scope","workflowId":${JSON.stringify(id)},"paths":${JSON.stringify(bound.paths ?? [])}}`,
+        'Execution',
+      )
+      if (!declared?.scope?.length) {
+        log('the quick route could not be given a scope; it has nothing to reconcile against')
+        return { outcome, stoppedAt: 'execution', workflowId: id }
+      }
+      log(`quick route bounded to ${declared.scope.join(', ')}`)
+      current = await control(statusCall, 'Execution')
+      tasks = current?.tasks?.length ? current.tasks : tasks
     }
 
     // Scoped recall: what this project already learned about the areas these tasks will write.

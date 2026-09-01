@@ -45,7 +45,7 @@ import {
   type StoredWorkflow,
 } from "../store/workflows.ts"
 import { apply, isTerminal, TransitionError, type WorkflowCommand } from "./machine.ts"
-import { parsePlan } from "./plan.ts"
+import { assertProjectRelative, parsePlan, type Plan } from "./plan.ts"
 import { route, type Preference } from "./routing.ts"
 import { insideAny } from "./scopes.ts"
 import { parseVerdict, type Verdict } from "./verdicts.ts"
@@ -161,6 +161,12 @@ export function startWorkflow(
   workflow = transition(context, workflow, { type: "complete_intake" }, now)
   workflow = transition(context, workflow, { mode: decision.mode, type: "route" }, now)
 
+  // The quick route has no architect, so nobody writes it a plan. It still needs the one thing
+  // reconciliation reads: without a write scope the worktree is compared against nothing and every
+  // path passes, which is the guarantee quietly leaving through the cheaper route. Routing refuses
+  // the route when no path was declared, so the scope here is never empty.
+  if (decision.mode === "quick") savePlan(context.database, id, quickPlan(decision.scope), now)
+
   const goalId = linkStartedWorkflow(context, id, text, now)
   record(context, id, "workflow.started", {
     mode: decision.mode,
@@ -261,6 +267,74 @@ export function workflowStatus(context: ServiceContext, workflowId?: string): un
   }
 }
 
+/** The single scoped task the quick route reconciles against, standing in for the plan it has not. */
+function quickPlan(scope: readonly string[]): Plan {
+  return {
+    assumptions: [],
+    integrationChecks: [],
+    requirements: [],
+    risks: [],
+    tasks: [
+      {
+        acceptanceCriteria: [],
+        dependencies: [],
+        key: "task-1",
+        objective: "carry out the request within the declared scope",
+        requirementIds: [],
+        title: "the requested change",
+        verificationCommands: [],
+        writeScopes: [...scope],
+      },
+    ],
+  }
+}
+
+/**
+ * The quick route has no architect to write it a plan, so the executor states the boundary it will
+ * work inside before it writes anything. That is weaker than a scope an independent role assigned,
+ * and deliberately so — it is the price of skipping the architect — but it is recorded before the
+ * work and reconciliation blocks anything outside it, which is the difference between a bound the
+ * plane can check and no bound at all. It is declared once: a scope that could be widened after the
+ * fact to cover what was written would prove nothing.
+ */
+export function declareScope(
+  context: ServiceContext,
+  workflowId: string,
+  paths: readonly string[],
+  now = Date.now(),
+): unknown {
+  const workflow = load(context, workflowId)
+  if (workflow.mode !== "quick") {
+    throw new WorkflowError(
+      `a scope is declared only on the quick route; this workflow is ${workflow.mode ?? "unrouted"} ` +
+        "and its scopes come from the plan",
+    )
+  }
+  if (workflow.state !== "quick_execution") {
+    throw new WorkflowError(`a scope is declared in quick_execution, not ${workflow.state}`)
+  }
+
+  const declared = [...new Set(paths.map((path) => path.trim()).filter((path) => path !== ""))].sort()
+  if (declared.length === 0) {
+    throw new WorkflowError(
+      "a scope needs at least one path: state the files and directories this change may write to",
+    )
+  }
+  for (const scope of declared) assertProjectRelative(scope)
+
+  const existing = loadTasks(context.database, workflowId)
+  if (existing.some((task) => task.writeScopes.length > 0)) {
+    throw new WorkflowError(
+      "this workflow already declared its scope; it cannot be widened once the work has started",
+    )
+  }
+
+  savePlan(context.database, workflowId, quickPlan(declared), now)
+  record(context, workflowId, "execution.scope_declared", { scopes: declared.join(", ") })
+
+  return { scope: declared, state: workflow.state, workflowId }
+}
+
 export function submitPlan(
   context: ServiceContext,
   workflowId: string,
@@ -321,6 +395,23 @@ export function reportTask(
         state: workflow.state,
       }
     }
+    // Reconciliation returns early when a workflow has no scope to compare against, so on the
+    // quick route an undeclared scope would let every path through. The refusal names the step
+    // rather than blocking each path in turn, which would read as the work being wrong.
+    if (
+      workflow.mode === "quick" &&
+      loadTasks(context.database, workflowId).every((task) => task.writeScopes.length === 0)
+    ) {
+      return {
+        reason:
+          "this quick-route workflow has not declared its write scope, so there is nothing to " +
+          "reconcile these changes against. Declare the paths this change may write to, then " +
+          "report the task.",
+        retry: true,
+        state: workflow.state,
+      }
+    }
+
     const violations = outOfScope(context, workflowId, key, changedPaths)
     if (violations.length !== 0) {
       setTaskState(context.database, workflowId, key, "blocked", now)

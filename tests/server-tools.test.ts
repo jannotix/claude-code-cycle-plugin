@@ -434,9 +434,13 @@ test("cancelling without confirmation is refused, and with it is final", async (
 test("status and evidence answer for a workflow that has neither tasks nor a candidate", async () => {
   const dataDirectory = isolatedDataDirectory()
   const started = payload<{ workflowId: string }>(
-    (await exchange([call(1, "workflow", { operation: "start", request: "rename a helper" })], {
-      dataDirectory,
-    }))[0],
+    // Explicitly the full route: it has no tasks until the architect's plan is accepted, which is
+    // the state under test. A quick-route workflow is scoped at the start and therefore always has
+    // one, so routing this by default would be testing a state that no longer exists.
+    (await exchange(
+      [call(1, "workflow", { operation: "start", preference: "full", request: "rename a helper" })],
+      { dataDirectory },
+    ))[0],
   )
 
   const responses = await exchange(

@@ -54,6 +54,7 @@ export function route(request, affectedPaths, preference) {
             critical: [],
             mode: "full",
             rationale: "the full cycle was requested explicitly",
+            scope: [...affectedPaths],
             userPromoted: true,
         };
     }
@@ -79,6 +80,7 @@ export function route(request, affectedPaths, preference) {
             rationale: critical.size === 0
                 ? "the quick route was requested and no critical signal was found"
                 : `the quick route was requested despite ${[...critical].join(", ")}`,
+            scope: paths,
             userPromoted: false,
         };
     }
@@ -88,6 +90,7 @@ export function route(request, affectedPaths, preference) {
         rationale: critical.size === 0
             ? "no critical signal in the request or the affected paths"
             : `critical signals: ${[...critical].join(", ")}`,
+        scope: paths,
         userPromoted: false,
     };
 }

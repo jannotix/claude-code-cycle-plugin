@@ -1,13 +1,13 @@
 {
   "name": "cycle-control-plane",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "private": true,
   "type": "module",
   "description": "Control plane for the Cycle plugin. No runtime dependencies.",
   "license": "FSL-1.1-MIT",
   "author": "Gianluca Iannotta",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "tsc",

@@ -152,7 +152,7 @@ function transitiveDependencies(tasks) {
         resolve(task.key, new Set([task.key]));
     return result;
 }
-function assertProjectRelative(scope) {
+export function assertProjectRelative(scope) {
     const normalized = normalizeScope(scope);
     if (!normalized || normalized.startsWith("/") || /^[a-z]:/iu.test(normalized)) {
         throw new PlanRejected(`write scope must be project-relative: ${scope}`);

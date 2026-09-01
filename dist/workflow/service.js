@@ -16,7 +16,7 @@ import { goalOfWorkflow } from "../store/goals.js";
 import { newId } from "../store/ids.js";
 import { activeWorkflowForRequest, candidateManifest, createWorkflow, frozenFiles, lastRefusal, latestWorkflow, loadPlan, loadRequest, loadReviews, loadTasks, loadWorkflow, recordArbitration, recordCandidate, requestDigestOf, saveWorkflow, savePlan, setTaskState, submitReview, } from "../store/workflows.js";
 import { apply, isTerminal, TransitionError } from "./machine.js";
-import { parsePlan } from "./plan.js";
+import { assertProjectRelative, parsePlan } from "./plan.js";
 import { route } from "./routing.js";
 import { insideAny } from "./scopes.js";
 import { parseVerdict } from "./verdicts.js";
@@ -71,6 +71,8 @@ export function startWorkflow(context, request, affectedPaths, preference, now =
     let workflow = load(context, id);
     workflow = transition(context, workflow, { type: "complete_intake" }, now);
     workflow = transition(context, workflow, { mode: decision.mode, type: "route" }, now);
+    if (decision.mode === "quick")
+        savePlan(context.database, id, quickPlan(decision.scope), now);
     const goalId = linkStartedWorkflow(context, id, text, now);
     record(context, id, "workflow.started", {
         mode: decision.mode,
@@ -144,6 +146,49 @@ export function workflowStatus(context, workflowId) {
         workflowId: workflow.id,
     };
 }
+function quickPlan(scope) {
+    return {
+        assumptions: [],
+        integrationChecks: [],
+        requirements: [],
+        risks: [],
+        tasks: [
+            {
+                acceptanceCriteria: [],
+                dependencies: [],
+                key: "task-1",
+                objective: "carry out the request within the declared scope",
+                requirementIds: [],
+                title: "the requested change",
+                verificationCommands: [],
+                writeScopes: [...scope],
+            },
+        ],
+    };
+}
+export function declareScope(context, workflowId, paths, now = Date.now()) {
+    const workflow = load(context, workflowId);
+    if (workflow.mode !== "quick") {
+        throw new WorkflowError(`a scope is declared only on the quick route; this workflow is ${workflow.mode ?? "unrouted"} ` +
+            "and its scopes come from the plan");
+    }
+    if (workflow.state !== "quick_execution") {
+        throw new WorkflowError(`a scope is declared in quick_execution, not ${workflow.state}`);
+    }
+    const declared = [...new Set(paths.map((path) => path.trim()).filter((path) => path !== ""))].sort();
+    if (declared.length === 0) {
+        throw new WorkflowError("a scope needs at least one path: state the files and directories this change may write to");
+    }
+    for (const scope of declared)
+        assertProjectRelative(scope);
+    const existing = loadTasks(context.database, workflowId);
+    if (existing.some((task) => task.writeScopes.length > 0)) {
+        throw new WorkflowError("this workflow already declared its scope; it cannot be widened once the work has started");
+    }
+    savePlan(context.database, workflowId, quickPlan(declared), now);
+    record(context, workflowId, "execution.scope_declared", { scopes: declared.join(", ") });
+    return { scope: declared, state: workflow.state, workflowId };
+}
 export function submitPlan(context, workflowId, raw, now = Date.now()) {
     const workflow = load(context, workflowId);
     if (workflow.state !== "architecture") {
@@ -171,6 +216,16 @@ export function reportTask(context, workflowId, key, status, summary, changedPat
                 reason: "the change set could not be read, so this task's writes cannot be reconciled against " +
                     "the scopes the plan authorized. Nothing has been recorded as completed. Report the " +
                     "task again.",
+                retry: true,
+                state: workflow.state,
+            };
+        }
+        if (workflow.mode === "quick" &&
+            loadTasks(context.database, workflowId).every((task) => task.writeScopes.length === 0)) {
+            return {
+                reason: "this quick-route workflow has not declared its write scope, so there is nothing to " +
+                    "reconcile these changes against. Declare the paths this change may write to, then " +
+                    "report the task.",
                 retry: true,
                 state: workflow.state,
             };

@@ -203,7 +203,7 @@ function transitiveDependencies(tasks: readonly Task[]): Map<string, Set<string>
   return result
 }
 
-function assertProjectRelative(scope: string): void {
+export function assertProjectRelative(scope: string): void {
   const normalized = normalizeScope(scope)
   if (!normalized || normalized.startsWith("/") || /^[a-z]:/iu.test(normalized)) {
     throw new PlanRejected(`write scope must be project-relative: ${scope}`)
