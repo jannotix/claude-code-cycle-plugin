@@ -1,6 +1,6 @@
 ---
 name: resume
-description: Continue a Cycle workflow that was interrupted, paused or left mid-stage — reconcile what is on disk, then put the run back where it stopped. Finishes a delivery a crash left half done.
+description: Continue a Cycle workflow that was interrupted, paused or left mid-stage — reconcile what is on disk, then put the run back where it stopped. Finishes a delivery a crash left half done, or one that was approved and never started.
 ---
 
 Reconcile, then continue: $ARGUMENTS
@@ -15,7 +15,10 @@ Reconcile, then continue: $ARGUMENTS
    reviews has been reported as "completed, full cycle, seven agents" by a caller writing from
    impression rather than from the answer in front of it.
 3. If `recovered` is not null, say how many files a delivery interrupted by a crash finished
-   writing.
+   writing. If `delivered` is not null, say that an approved candidate whose delivery call never
+   reached the control plane was delivered now, and quote its `reason` — it names the commit. A
+   lost call and a crash leave the same record, an approval with nothing after it, and the plane
+   tells them apart by the journal: a crash wrote one, a lost call never got that far.
 4. If `pausedBecause` is not null, say it verbatim before anything else about the state. A workflow
    paused because a provider stopped answering is waiting on the provider, not on the user, and the
    reason names which role lost it.
@@ -29,8 +32,10 @@ Reconcile, then continue: $ARGUMENTS
    - `repair`, or any other non-terminal stage — go to step 7 directly. The stage is persisted and
      the workflow picks up from it.
    - `completed`, `cancelled` — nothing to continue. Report and stop.
-   - `delivery` — report and **stop**. A promotion that was interrupted and could not be finished
-     needs a person to look at the working tree; re-running it risks delivering twice.
+   - `delivery` — report and **stop**. Reconcile has already finished any delivery that was safe
+     to finish; a workflow still here had a promotion run and abort, because the tree moved after
+     approval. That needs a person to look at the working tree, and re-running risks delivering
+     twice.
 7. Run the `/cycle:run` workflow exactly as `/cycle:run` describes, passing `originalRequest` from
    the reconcile result verbatim as the `request`. Never retype it or write it from memory: the
    arbiter judges the delivered work against that text, and a word changed here is a requirement
@@ -45,7 +50,7 @@ governed cycle, not doing the cycle's work.
 | State | What happened |
 | --- | --- |
 | `completed` | The candidate was delivered and re-verified. Nothing to resume |
-| `delivery` | Promotion was interrupted and could not be finished. The working tree needs a look |
+| `delivery` | A promotion was attempted and aborted, because the tree moved after approval. The working tree needs a look |
 | `repair` | A gate, a reviewer or the arbiter rejected the candidate. Continued from there |
 | `blocked` | The repair budget ran out. All work is preserved; `/cycle:retry` extends it |
 | `paused` | Stopped at a safe boundary — deliberately, or because a provider stopped answering. `pausedBecause` says which. Resumed and continued from there |
@@ -53,10 +58,13 @@ governed cycle, not doing the cycle's work.
 
 ## Boundaries
 
-Reconciliation never approves, never delivers and never edits. It reads persisted state, finishes a
-delivery that was already approved and interrupted, and says where the run is before continuing it.
+Reconciliation never approves and never edits. It reads persisted state, finishes a delivery that
+was already approved — one a crash interrupted mid-write, or one whose call never arrived — and says
+where the run is before continuing it. Both finish through the same promotion, which re-verifies
+every approved byte against the frozen candidate before it commits and aborts if anything moved,
+so reconcile cannot deliver something the arbiter did not approve.
 
-Two states are reported and never continued: `delivery`, because a promotion that could not finish
+Two states are reported and never continued: `delivery`, because a promotion that ran and aborted
 needs a person to look at the tree, and a history that does not verify, because nothing should run
 against a record that has been altered.
 

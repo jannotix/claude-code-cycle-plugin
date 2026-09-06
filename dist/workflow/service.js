@@ -5,7 +5,7 @@ import { resolveRole } from "../roles.js";
 import { advanceGoalOfWorkflow, linkStartedWorkflow } from "../goals.js";
 import { captureBlocked, captureDelivery, recall } from "../memory.js";
 import { parseSnapshot } from "../evidence/accessibility.js";
-import { commitMessage, DeliveryAborted, deliveryOf, promote, recoverDelivery, } from "../evidence/delivery.js";
+import { commitMessage, DeliveryAborted, deliveryOf, manifestWithEvidence, promote, recoverDelivery, } from "../evidence/delivery.js";
 import { browserEvidence } from "../evidence/browser.js";
 import { proofEvidence, proofGateName } from "../evidence/proof-evidence.js";
 import { runProof } from "../evidence/proof.js";
@@ -14,7 +14,7 @@ import { latestCheckpoint, signCheckpoint, verifyCheckpoints } from "../store/ch
 import { appendHistory, lastEvent, readHistory, verifyHistory } from "../store/history.js";
 import { goalOfWorkflow } from "../store/goals.js";
 import { newId } from "../store/ids.js";
-import { activeWorkflowForRequest, candidateManifest, createWorkflow, frozenFiles, lastRefusal, latestWorkflow, loadPlan, loadRequest, loadReviews, loadTasks, loadWorkflow, recordArbitration, recordCandidate, requestDigestOf, saveWorkflow, savePlan, setTaskState, submitReview, } from "../store/workflows.js";
+import { activeWorkflowForRequest, createWorkflow, frozenFiles, lastRefusal, latestWorkflow, loadPlan, loadRequest, loadReviews, loadTasks, loadWorkflow, recordArbitration, recordCandidate, requestDigestOf, saveWorkflow, savePlan, setTaskState, submitReview, } from "../store/workflows.js";
 import { apply, isTerminal, TransitionError } from "./machine.js";
 import { assertProjectRelative, parsePlan } from "./plan.js";
 import { route } from "./routing.js";
@@ -349,6 +349,7 @@ export async function reconcile(context, root, workflowId, now = Date.now()) {
         return { found: false, next: "nothing to resume in this project" };
     }
     let recovered = null;
+    let delivered = null;
     if (workflow.state === "delivery") {
         try {
             recovered = await recoverDelivery(context.database, root, workflow.id, deliveryMessage(context, workflow.id, workflow.candidateId ?? ""), now);
@@ -360,6 +361,10 @@ export async function reconcile(context, root, workflowId, now = Date.now()) {
                 });
                 signCheckpoint(context.database, context.dataDirectory, now);
             }
+            else if (deliveryOf(context.database, workflow.id) === undefined &&
+                lastEvent(context.database, workflow.id, "delivery.aborted") === undefined) {
+                delivered = await deliverCandidate(context, workflow.id, root, now);
+            }
         }
         catch (error) {
             record(context, workflow.id, "delivery.aborted", {
@@ -370,6 +375,7 @@ export async function reconcile(context, root, workflowId, now = Date.now()) {
     const current = loadWorkflow(context.database, workflow.id);
     return {
         chain: verifyHistory(context.database).valid && verifyCheckpoints(context.database).valid,
+        delivered,
         delivery: deliveryOf(context.database, workflow.id) ?? null,
         found: true,
         next: NEXT_ACTION[current.state],
@@ -397,8 +403,8 @@ export function recallForRequest(context, request, paths = []) {
 }
 function deliveryMessage(context, workflowId, candidateId) {
     const request = loadRequest(context.database, workflowId);
-    const manifest = candidateManifest(context.database, candidateId);
-    if (manifest === undefined) {
+    const manifest = manifestWithEvidence(context.database, candidateId);
+    if (manifest === null) {
         throw new WorkflowError("this candidate has no recorded manifest to commit against");
     }
     return commitMessage(request?.originalText ?? "deliver approved candidate", manifest, workflowId);
@@ -409,7 +415,8 @@ const NEXT_ACTION = {
     blocked: "the repair budget is exhausted; /cycle:retry extends it",
     cancelled: "nothing: this workflow was cancelled",
     completed: "nothing: this workflow was delivered",
-    delivery: "delivery was interrupted and could not be finished; inspect the working tree",
+    delivery: "a delivery was attempted and aborted; inspect the working tree before anything else runs " +
+        "against this workflow",
     execution: "run /cycle:run again: the executor must finish its tasks",
     independent_reviews: "run /cycle:run again to re-dispatch the reviewers",
     intake: "run /cycle:run to route this request",

@@ -12,12 +12,16 @@ import {
   commitMessage,
   DeliveryAborted,
   deliveryOf,
+  manifestWithEvidence,
   promote,
   recoverDelivery,
 } from "../src/evidence/delivery.ts"
+import type { Evidence } from "../src/evidence/gates.ts"
 import { Database } from "../src/store/database.ts"
+import { recordEvidence } from "../src/store/evidence.ts"
 import { candidateManifest, recordCandidate } from "../src/store/workflows.ts"
 import { latestCheckpoint, verifyCheckpoints } from "../src/store/checkpoints.ts"
+import { lastEvent } from "../src/store/history.ts"
 import {
   arbitrate,
   deliverCandidate,
@@ -343,6 +347,96 @@ test("reconciliation finishes a delivery the application interrupted", async () 
   }
 })
 
+// A crash mid-write and a deliver call that never arrived leave the same record behind — an
+// approval with nothing after it — and are opposites to act on. Reading only the journal, reconcile
+// called both "interrupted", refused to finish work that was safe to finish, and left approved
+// changes uncommitted beside a note saying not to retry. In a non-interactive session the workflow
+// dies with the session, so this was how a full cycle ordinarily ended. Found by certification
+// row 13.6 on 1.0.18.
+test("reconciliation delivers an approved candidate whose delivery call never arrived", async () => {
+  const item = fixture()
+  try {
+    item.write("src/app.ts", "export const answer = 42\n")
+    const { workflowId } = await frozen(item)
+
+    verifyCandidate(item.ctx, workflowId, {
+      evidenceIds: [],
+      mandatoryPassed: true,
+      reason: "gates passed",
+    })
+    arbitrate(
+      item.ctx,
+      workflowId,
+      { decision: "approved", findings: [], repair_target: null, requirements: [] },
+      true,
+    )
+    // The approval is recorded and the workflow sits in delivery. Nothing was ever journaled: the
+    // call that would have started a promotion was lost between the run and the plane.
+    assert.equal(deliveryOf(item.ctx.database, workflowId), undefined)
+    const before = show(item.root, "rev-parse", "HEAD")
+
+    const reconciled = (await reconcile(item.ctx, item.root)) as {
+      delivered: { delivered: string[]; state: string } | null
+      recovered: unknown
+      state: string
+    }
+
+    assert.equal(reconciled.recovered, null, "there was no interrupted write to recover")
+    assert.equal(reconciled.delivered?.state, "completed")
+    assert.deepEqual(reconciled.delivered?.delivered, ["src/app.ts"])
+    assert.equal(reconciled.state, "completed")
+    assert.notEqual(show(item.root, "rev-parse", "HEAD"), before, "the approved bytes were committed")
+    assert.equal(deliveryOf(item.ctx.database, workflowId)?.state, "completed")
+  } finally {
+    item.close()
+  }
+})
+
+// The one case that still stops: a delivery that ran and aborted. Reconcile must not deliver again
+// on top of it, and what it says afterwards has to describe an attempt, not an interruption.
+test("reconciliation leaves an aborted delivery alone and says so", async () => {
+  const item = fixture()
+  try {
+    item.write("src/app.ts", "export const answer = 41\n")
+    const { workflowId } = await frozen(item)
+
+    verifyCandidate(item.ctx, workflowId, {
+      evidenceIds: [],
+      mandatoryPassed: true,
+      reason: "gates passed",
+    })
+    arbitrate(
+      item.ctx,
+      workflowId,
+      { decision: "approved", findings: [], repair_target: null, requirements: [] },
+      true,
+    )
+    // The tree moves after approval, so the first delivery aborts. Promotion checks the bytes
+    // before it journals, so the abort leaves no delivery row at all — the journal looks exactly
+    // as it does when no delivery was ever attempted. Only the history tells the two apart.
+    item.write("src/app.ts", "export const answer = 42\n")
+    const first = (await deliverCandidate(item.ctx, workflowId, item.root)) as { aborted?: string }
+    assert.ok(first.aborted, "the moved tree must abort the delivery")
+    assert.equal(deliveryOf(item.ctx.database, workflowId), undefined, "an abort journals nothing")
+    assert.ok(
+      lastEvent(item.ctx.database, workflowId, "delivery.aborted") !== undefined,
+      "but the history records the attempt by name",
+    )
+
+    const reconciled = (await reconcile(item.ctx, item.root)) as {
+      delivered: unknown
+      next: string
+      state: string
+    }
+
+    assert.equal(reconciled.delivered, null, "an aborted delivery is not retried by reconcile")
+    assert.equal(reconciled.state, "delivery")
+    assert.match(reconciled.next, /attempted and aborted/u)
+  } finally {
+    item.close()
+  }
+})
+
 test("delivery through the service moves the workflow to completed and signs the chain", async () => {
   const item = fixture()
   try {
@@ -431,12 +525,44 @@ test("delivery commits the approved bytes", async () => {
   }
 })
 
+/** A gate that passed, as the engine would have recorded it. */
+function passedGate(name: string, mandatory: boolean): Evidence {
+  return {
+    exitCode: 0,
+    finishedAt: 2,
+    gate: {
+      executor: { kind: "candidate-integrity" },
+      invocation: name,
+      kind: "inspection",
+      mandatory,
+      name,
+      precondition: "the test recorded it",
+      timeoutSeconds: 1,
+    },
+    id: `evidence-${name}`,
+    output: "",
+    outputDigest: "d",
+    skipReason: null,
+    startedAt: 1,
+    status: "passed",
+  }
+}
+
+// This test asserted the subject and the three trailers and never looked at the sentence between
+// them, so it passed while every delivered commit said "on 0 recorded gates". The manifest is
+// frozen before verification and carries no evidence; the count has to come from the table.
 test("the commit message leads with the request and records what was approved", async () => {
   const item = fixture()
   try {
     item.write("src/app.ts", "export const answer = 42\n")
     const { candidateId, workflowId } = await frozen(item)
-    const manifest = candidateManifest(item.ctx.database, candidateId)!
+    recordEvidence(
+      item.ctx.database,
+      candidateId,
+      [passedGate("command:npm test", true), passedGate("integrity:candidate", true)],
+      (entry) => entry.gate.mandatory,
+    )
+    const manifest = manifestWithEvidence(item.ctx.database, candidateId)!
 
     await promote(
       item.ctx.database,
@@ -448,9 +574,39 @@ test("the commit message leads with the request and records what was approved", 
     const message = show(item.root, "log", "-1", "--format=%B")
 
     assert.ok(message.startsWith("add the answer endpoint"))
+    assert.ok(message.includes("on 2 recorded gates"), message)
     assert.ok(message.includes(`Base-revision: ${manifest.baseRevision}`))
     assert.ok(message.includes(`Candidate-digest: ${manifest.candidateDigest}`))
     assert.ok(message.includes(`Cycle-workflow: ${workflowId}`))
+  } finally {
+    item.close()
+  }
+})
+
+// The frozen manifest names no evidence, by construction: it is written before verification runs.
+// Whoever asks what a candidate was approved on has to read the table, and one function does.
+test("the manifest with evidence names what the table holds, the stored one names nothing", async () => {
+  const item = fixture()
+  try {
+    item.write("src/app.ts", "export const answer = 42\n")
+    const { candidateId } = await frozen(item)
+
+    assert.deepEqual(candidateManifest(item.ctx.database, candidateId)!.evidenceIds, [])
+    assert.deepEqual(manifestWithEvidence(item.ctx.database, candidateId)!.evidenceIds, [])
+
+    recordEvidence(
+      item.ctx.database,
+      candidateId,
+      [passedGate("b-gate", false), passedGate("a-gate", true)],
+      (entry) => entry.gate.mandatory,
+    )
+
+    assert.deepEqual(candidateManifest(item.ctx.database, candidateId)!.evidenceIds, [])
+    assert.deepEqual(manifestWithEvidence(item.ctx.database, candidateId)!.evidenceIds, [
+      "evidence-a-gate",
+      "evidence-b-gate",
+    ])
+    assert.equal(manifestWithEvidence(item.ctx.database, "no-such-candidate"), null)
   } finally {
     item.close()
   }

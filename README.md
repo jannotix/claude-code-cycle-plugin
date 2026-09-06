@@ -235,6 +235,11 @@ a plan that does not include it is not visible from here, so that one it cannot 
 The Node floor is a patch version, not a major one: the store is built on `node:sqlite`, which is
 unflagged only from 22.13.0. Below it the store cannot open, and `/cycle:doctor` says so.
 
+In a non-interactive session (`claude -p`, the Agent SDK) the workflow ends when the session does.
+Everything it recorded survives, so `/cycle:resume` in a later session reconciles what is on disk
+and continues from the persisted stage — including finishing a delivery that was approved and never
+started, which is how a run that lost its last call ordinarily ends.
+
 ## License
 
 Copyright 2026 Gianluca Iannotta.

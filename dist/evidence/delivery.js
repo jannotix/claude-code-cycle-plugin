@@ -14,16 +14,21 @@ export class DeliveryAborted extends Error {
     }
 }
 const TEMPORARY_SUFFIX = ".cycle-delivery";
-export async function promote(database, root, workflowId, candidateId, message, now = Date.now()) {
+export function manifestWithEvidence(database, candidateId) {
     const stored = loadManifest(database, candidateId);
     if (stored === null)
-        throw new DeliveryAborted("this candidate has no recorded manifest");
-    const manifest = {
+        return null;
+    return {
         ...stored,
         evidenceIds: database
             .all("select id from evidence where candidate_id = ? order by gate_name", candidateId)
             .map((row) => String(row["id"])),
     };
+}
+export async function promote(database, root, workflowId, candidateId, message, now = Date.now()) {
+    const manifest = manifestWithEvidence(database, candidateId);
+    if (manifest === null)
+        throw new DeliveryAborted("this candidate has no recorded manifest");
     await assertUnchanged(root, manifest);
     journal(database, workflowId, candidateId, manifest, "prepared", null, now);
     return await write(database, root, workflowId, candidateId, manifest, now, message);

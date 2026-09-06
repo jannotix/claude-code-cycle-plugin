@@ -10,6 +10,7 @@ import {
   commitMessage,
   DeliveryAborted,
   deliveryOf,
+  manifestWithEvidence,
   promote,
   recoverDelivery,
 } from "../evidence/delivery.ts"
@@ -25,7 +26,6 @@ import { goalOfWorkflow } from "../store/goals.ts"
 import { newId } from "../store/ids.ts"
 import {
   activeWorkflowForRequest,
-  candidateManifest,
   createWorkflow,
   frozenFiles,
   lastRefusal,
@@ -611,6 +611,7 @@ export async function reconcile(
   }
 
   let recovered = null
+  let delivered: unknown = null
   if (workflow.state === "delivery") {
     try {
       recovered = await recoverDelivery(
@@ -627,6 +628,26 @@ export async function reconcile(
           revision: recovered.revision,
         })
         signCheckpoint(context.database, context.dataDirectory, now)
+      } else if (
+        deliveryOf(context.database, workflow.id) === undefined &&
+        lastEvent(context.database, workflow.id, "delivery.aborted") === undefined
+      ) {
+        // No journal, no delivery row, and no abort in the history: the approval was recorded and
+        // a promotion never began. A crash mid-write and a call that never arrived leave the same
+        // journal — none, or one half-written — but they are opposites to act on. The first must
+        // not be retried. The second is safe, and promote() re-verifies every approved byte
+        // before it commits, so the plane refuses this itself if the tree has moved.
+        //
+        // The journal alone cannot tell them apart, and neither can it tell either from a
+        // delivery that ran and aborted: promote() checks the bytes before it journals, so an
+        // abort leaves no row. The history can — the plane records delivery.aborted by name — and
+        // an aborted attempt is the one case a person has to look at first.
+        //
+        // Reading only the journal, reconcile called every one of these "interrupted" and refused
+        // to finish work that was safe to finish, leaving approved changes uncommitted beside a
+        // note saying not to retry. In a non-interactive session the workflow dies with the
+        // session, so this was the ordinary way a full cycle ended, not the edge.
+        delivered = await deliverCandidate(context, workflow.id, root, now)
       }
     } catch (error) {
       record(context, workflow.id, "delivery.aborted", {
@@ -638,6 +659,7 @@ export async function reconcile(
   const current = loadWorkflow(context.database, workflow.id)!
   return {
     chain: verifyHistory(context.database).valid && verifyCheckpoints(context.database).valid,
+    delivered,
     delivery: deliveryOf(context.database, workflow.id) ?? null,
     found: true,
     next: NEXT_ACTION[current.state],
@@ -696,8 +718,10 @@ function deliveryMessage(
   candidateId: string,
 ): string {
   const request = loadRequest(context.database, workflowId)
-  const manifest = candidateManifest(context.database, candidateId)
-  if (manifest === undefined) {
+  // With its evidence. The stored manifest predates verification and names no gate at all, and a
+  // commit built from it claimed to rest on nothing.
+  const manifest = manifestWithEvidence(context.database, candidateId)
+  if (manifest === null) {
     throw new WorkflowError("this candidate has no recorded manifest to commit against")
   }
   return commitMessage(request?.originalText ?? "deliver approved candidate", manifest, workflowId)
@@ -710,7 +734,9 @@ const NEXT_ACTION: Readonly<Record<string, string>> = {
   blocked: "the repair budget is exhausted; /cycle:retry extends it",
   cancelled: "nothing: this workflow was cancelled",
   completed: "nothing: this workflow was delivered",
-  delivery: "delivery was interrupted and could not be finished; inspect the working tree",
+  delivery:
+    "a delivery was attempted and aborted; inspect the working tree before anything else runs " +
+    "against this workflow",
   execution: "run /cycle:run again: the executor must finish its tasks",
   independent_reviews: "run /cycle:run again to re-dispatch the reviewers",
   intake: "run /cycle:run to route this request",

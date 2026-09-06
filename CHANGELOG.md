@@ -3,6 +3,37 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.19] - 2026-09-06
+
+Both found by certification row 13.6, a full governed cycle on the installed 1.0.18 artifact. The
+cycle completed and every governance layer did its job; the record it left understated itself, and
+the way it ended was the ordinary way, not the edge.
+
+### Fixed
+
+- Every commit Cycle has ever delivered said it rested on zero recorded gates. The sentence between
+  the subject and the trailers — "on N recorded gates and an independent arbitration" — was built
+  from the manifest frozen before verification, which names no evidence by construction; promotion
+  enriched its own copy for the journal and the commit message never saw it. The one delivered by
+  row 13.6 said `0` beside a journal listing six. One function now builds the manifest with its
+  evidence and both paths read it, and the test that exists for the commit message asserts the
+  number instead of only the trailers around it.
+- A deliver call that never reached the control plane left approved work uncommitted, with
+  reconcile refusing to finish it. The history ran from `workflow.started` to
+  `arbitration.approved` with no delivery event at all; reconcile, reading only the journal, found
+  nothing to recover and reported "delivery was interrupted and could not be finished" — but it had
+  never started, and the two are opposites to act on. Reconcile now tells them apart: no journal, no
+  delivery row and no `delivery.aborted` in the history means the promotion never began, and it runs
+  it through the same path the cycle uses, which re-verifies every approved byte before committing.
+  A delivery that ran and aborted is still left to a person. In a non-interactive session the
+  workflow dies with the session, so this was how a full cycle ordinarily ended.
+
+### Changed
+
+- The README says what happens to a run in a non-interactive session, and that `/cycle:resume`
+  finishes it. The resume skill describes the delivery state as an attempt that aborted, which is
+  the only way to still be there after reconciling.
+
 ## [1.0.18] - 2026-09-06
 
 ### Fixed

@@ -41,6 +41,30 @@ const TEMPORARY_SUFFIX = ".cycle-delivery"
  * file. The journal records the intent before the first rename and the completion after the last,
  * so a control plane killed in between finishes the same delivery instead of starting a new one.
  */
+/**
+ * The stored manifest with the evidence recorded against it since the freeze. The manifest is
+ * frozen before verification runs, so the list it carries is always empty; anything that says what
+ * a candidate was approved on has to read this, not the stored row.
+ *
+ * Two callers once built this separately — promotion enriched its copy for the journal, the commit
+ * message read the stored row — so every commit Cycle delivered said "on 0 recorded gates" while
+ * the journal beside it listed six. One function, read by both, is the fix; the test that asserts
+ * the count is what keeps it that way.
+ */
+export function manifestWithEvidence(
+  database: Database,
+  candidateId: string,
+): CandidateManifest | null {
+  const stored = loadManifest(database, candidateId)
+  if (stored === null) return null
+  return {
+    ...stored,
+    evidenceIds: database
+      .all<Row>("select id from evidence where candidate_id = ? order by gate_name", candidateId)
+      .map((row) => String(row["id"])),
+  }
+}
+
 export async function promote(
   database: Database,
   root: string,
@@ -49,17 +73,10 @@ export async function promote(
   message: string,
   now = Date.now(),
 ): Promise<DeliveryOutcome> {
-  const stored = loadManifest(database, candidateId)
-  if (stored === null) throw new DeliveryAborted("this candidate has no recorded manifest")
-
   // The delivered manifest names the evidence that supported it, so the journal answers
   // "what was this approved on" without a join against a table anyone could add rows to.
-  const manifest: CandidateManifest = {
-    ...stored,
-    evidenceIds: database
-      .all<Row>("select id from evidence where candidate_id = ? order by gate_name", candidateId)
-      .map((row) => String(row["id"])),
-  }
+  const manifest = manifestWithEvidence(database, candidateId)
+  if (manifest === null) throw new DeliveryAborted("this candidate has no recorded manifest")
 
   await assertUnchanged(root, manifest)
   journal(database, workflowId, candidateId, manifest, "prepared", null, now)
