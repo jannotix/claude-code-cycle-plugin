@@ -463,7 +463,7 @@ export function candidateEvidence(context, workflowId) {
     const workflow = load(context, workflowId);
     const requirements = loadPlan(context.database, workflowId)?.requirements.map((entry) => entry.id) ?? [];
     if (workflow.candidateId === null)
-        return { candidate: null, evidence: [], requirements };
+        return { candidate: null, evidence: [], requirements, reviews: [] };
     return {
         candidate: workflow.candidateId,
         evidence: loadEvidence(context.database, workflow.candidateId).map((item) => ({
@@ -474,6 +474,10 @@ export function candidateEvidence(context, workflowId) {
             status: item.status,
         })),
         requirements,
+        reviews: loadReviews(context.database, workflow.candidateId).map((review) => ({
+            role: review.role,
+            ...review.verdict,
+        })),
     };
 }
 export function verificationInputs(context, workflowId) {
@@ -580,18 +584,31 @@ export function arbitrate(context, workflowId, raw, mandatoryPassed, now = Date.
     }
     const candidateId = requireCandidate(workflow);
     const verdict = parseVerdict(raw, verdictContext(context, workflowId, "arbiter"));
+    let boundBy = null;
     if (workflow.mode === "full") {
         const reviews = loadReviews(context.database, candidateId);
         if (reviews.length < 2)
             throw new WorkflowError("arbitration requires both independent reviews");
-        if (verdict.decision === "approved" && reviews.some((r) => r.verdict.decision === "rejected")) {
-            throw new WorkflowError("arbitration cannot approve while a reviewer rejected the candidate");
+        const rejecting = reviews.filter((review) => review.verdict.decision === "rejected");
+        if (verdict.decision === "approved" && rejecting.length > 0) {
+            boundBy = {
+                target: rejecting.some((review) => review.verdict.repairTarget === "architecture")
+                    ? "architecture"
+                    : "execution",
+                who: rejecting.map((review) => review.role).join(" and "),
+            };
         }
     }
     const receiptDigest = recordArbitration(context.database, workflowId, candidateId, verdict, now);
     let next;
     let refusal = null;
-    if (verdict.decision === "approved") {
+    if (boundBy !== null) {
+        refusal =
+            "arbitration cannot approve while a reviewer rejected the candidate: " +
+                `${boundBy.who} rejected it, and that rejection stands until a repair answers it`;
+        next = transition(context, workflow, { target: boundBy.target, type: "reject" }, now);
+    }
+    else if (verdict.decision === "approved") {
         try {
             next = transition(context, workflow, { mandatoryGatesPassed: mandatoryPassed, type: "approve" }, now);
         }

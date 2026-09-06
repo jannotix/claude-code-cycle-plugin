@@ -9,7 +9,8 @@ import type { CapturedCandidate } from "../src/evidence/candidate.ts"
 
 import { Database } from "../src/store/database.ts"
 import { newId } from "../src/store/ids.ts"
-import { loadWorkflow } from "../src/store/workflows.ts"
+import { lastEvent } from "../src/store/history.ts"
+import { lastRefusal, loadWorkflow } from "../src/store/workflows.ts"
 import {
   arbitrate,
   control,
@@ -280,12 +281,36 @@ test("an approval with passing gates reaches delivery", () => {
   }
 })
 
-test("arbitration cannot approve while a reviewer rejected the candidate", () => {
+// A rejection by either reviewer binds. This used to throw before recording anything — no
+// arbitration row, no history event, an empty lastRefusal — and the run re-dispatched the arbiter
+// with the same prompt until someone stopped it: twice, twenty-one agents, no trace. Found by
+// certification row 13.6 on WSL against 1.0.19, the first cycle in which the reviewers split.
+test("an approval against a reviewer's rejection is recorded, refused and routed to repair", () => {
   const { close, ctx } = context()
   try {
     const id = toArbitration(ctx, [REJECTION, APPROVAL])
 
-    assert.throws(() => arbitrate(ctx, id, APPROVAL, true), /a reviewer rejected/u)
+    const result = arbitrate(ctx, id, APPROVAL, true) as {
+      decision: string
+      refusal: string | null
+      state: string
+    }
+
+    assert.equal(result.decision, "approved", "the arbiter's verdict is recorded as it was given")
+    assert.match(String(result.refusal), /cannot approve while a reviewer rejected the candidate/u)
+    assert.match(String(result.refusal), /functional_reviewer rejected it/u)
+    assert.equal(result.state, "repair", "and the run goes to repair rather than stalling")
+    assert.equal(loadWorkflow(ctx.database, id)?.state, "repair")
+    assert.ok(
+      lastEvent(ctx.database, id, "arbitration.refused") !== undefined,
+      "the chain records the refusal by name",
+    )
+    // The repair is told what the reviewer objected to, not sent in to rediscover it.
+    const told = lastRefusal(ctx.database, id)
+    assert.ok(
+      told.some((entry) => entry.from === "functional_reviewer" && entry.findings.length > 0),
+      JSON.stringify(told),
+    )
   } finally {
     close()
   }

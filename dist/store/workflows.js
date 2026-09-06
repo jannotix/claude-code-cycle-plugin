@@ -146,8 +146,8 @@ export function loadReviews(database, candidateId) {
     }));
 }
 export function lastRefusal(database, workflowId) {
-    const arbitration = database.get(`select candidate_id, verdict from arbitrations
-      where workflow_id = ? and decision = 'rejected'
+    const arbitration = database.get(`select candidate_id, decision, verdict from arbitrations
+      where workflow_id = ?
       order by finalized_at desc limit 1`, workflowId);
     if (arbitration === undefined)
         return [];
@@ -158,8 +158,10 @@ export function lastRefusal(database, workflowId) {
             continue;
         refusals.push({ findings: review.verdict.findings ?? [], from: review.role });
     }
-    const verdict = JSON.parse(String(arbitration["verdict"]));
-    refusals.push({ findings: verdict.findings ?? [], from: "arbiter" });
+    if (String(arbitration["decision"]) === "rejected") {
+        const verdict = JSON.parse(String(arbitration["verdict"]));
+        refusals.push({ findings: verdict.findings ?? [], from: "arbiter" });
+    }
     return refusals.filter((refusal) => refusal.findings.length > 0);
 }
 export function recordArbitration(database, workflowId, candidateId, verdict, now) {

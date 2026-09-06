@@ -810,7 +810,7 @@ export function candidateEvidence(context: ServiceContext, workflowId: string): 
   // arbiter judges the original request directly.
   const requirements = loadPlan(context.database, workflowId)?.requirements.map((entry) => entry.id) ?? []
 
-  if (workflow.candidateId === null) return { candidate: null, evidence: [], requirements }
+  if (workflow.candidateId === null) return { candidate: null, evidence: [], requirements, reviews: [] }
   return {
     candidate: workflow.candidateId,
     evidence: loadEvidence(context.database, workflow.candidateId).map((item) => ({
@@ -821,6 +821,13 @@ export function candidateEvidence(context: ServiceContext, workflowId: string): 
       status: item.status,
     })),
     requirements,
+    // The independent reviews recorded against this candidate, so a run resumed at arbitration can
+    // hand them to the arbiter. It judged without them and approved on the gates over a rejection
+    // it had never been shown.
+    reviews: loadReviews(context.database, workflow.candidateId).map((review) => ({
+      role: review.role,
+      ...review.verdict,
+    })),
   }
 }
 
@@ -1010,11 +1017,26 @@ export function arbitrate(
   const candidateId = requireCandidate(workflow)
   const verdict = parseVerdict(raw, verdictContext(context, workflowId, "arbiter"))
 
+  // A rejection by either independent reviewer binds: the arbiter judges against the original
+  // request, not over the reviewers, so an approval that contradicts a live rejection cannot become
+  // a delivery. This used to be refused with a throw, before anything was recorded — no arbitration
+  // row, no history event, an empty lastRefusal — and the run then re-dispatched the arbiter with
+  // the same prompt, which produced the same verdict. Twice, twenty-one agents, and no trace in the
+  // record the product promises to keep. It is handled now the way an approval over failing gates
+  // already is: recorded verbatim, refused by name, and routed to repair toward the target the
+  // rejecting reviewer asked for. One dispatch converges, and the chain says what happened.
+  let boundBy: { readonly target: "architecture" | "execution"; readonly who: string } | null = null
   if (workflow.mode === "full") {
     const reviews = loadReviews(context.database, candidateId)
     if (reviews.length < 2) throw new WorkflowError("arbitration requires both independent reviews")
-    if (verdict.decision === "approved" && reviews.some((r) => r.verdict.decision === "rejected")) {
-      throw new WorkflowError("arbitration cannot approve while a reviewer rejected the candidate")
+    const rejecting = reviews.filter((review) => review.verdict.decision === "rejected")
+    if (verdict.decision === "approved" && rejecting.length > 0) {
+      boundBy = {
+        target: rejecting.some((review) => review.verdict.repairTarget === "architecture")
+          ? "architecture"
+          : "execution",
+        who: rejecting.map((review) => review.role).join(" and "),
+      }
     }
   }
 
@@ -1023,7 +1045,12 @@ export function arbitrate(
 
   let next: StoredWorkflow
   let refusal: string | null = null
-  if (verdict.decision === "approved") {
+  if (boundBy !== null) {
+    refusal =
+      "arbitration cannot approve while a reviewer rejected the candidate: " +
+      `${boundBy.who} rejected it, and that rejection stands until a repair answers it`
+    next = transition(context, workflow, { target: boundBy.target, type: "reject" }, now)
+  } else if (verdict.decision === "approved") {
     try {
       next = transition(context, workflow, { mandatoryGatesPassed: mandatoryPassed, type: "approve" }, now)
     } catch (error) {

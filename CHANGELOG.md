@@ -3,6 +3,31 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.20] - 2026-09-07
+
+Found by certification row 13.6 on WSL, the first governed cycle in which the two independent
+reviewers split. On Windows they had agreed, so nothing surfaced.
+
+### Fixed
+
+- When one reviewer rejected and the arbiter approved anyway, the run could not converge. The
+  security reviewer rejected on a real gap — the plan asked for a deterministic tie-break between
+  equal names, the executor used `localeCompare` alone, and no test creates two of them — and the
+  arbiter approved, because the arbiter was never shown the reviews: its prompt carried the gates
+  and the requirement identifiers, not the two verdicts. The control plane refused the approval,
+  correctly, but with a throw before anything was recorded, so there was no arbitration row, no
+  history event and an empty `lastRefusal`; the run then re-dispatched the arbiter with the same
+  prompt, which produced the same verdict. Twice, twenty-one agents, and no trace in the record the
+  product promises to keep. Three things changed. The arbiter is handed both reviews and told the
+  rule: a rejection binds, and disagreeing means rejecting with a repair target and the reasoning
+  on record. The plane records an approval that contradicts a live rejection the way it already
+  records an approval over failing gates — verbatim, refused by name in the chain, and routed to
+  repair toward the target the rejecting reviewer asked for — so one dispatch converges even when
+  the arbiter is wrong. And `lastRefusal` reads the latest arbitration whatever it decided, so the
+  repair that follows is told what the reviewer objected to instead of sent in to rediscover it.
+- `evidence` returns the reviews recorded against the candidate, so a run resumed at arbitration
+  can hand them to the arbiter as a fresh run does.
+
 ## [1.0.19] - 2026-09-06
 
 Both found by certification row 13.6, a full governed cycle on the installed 1.0.18 artifact. The
