@@ -4,7 +4,7 @@ description: Performs a single deterministic Cycle control-plane call and return
 model: haiku
 effort: low
 maxTurns: 4
-disallowedTools: [Write, Edit, NotebookEdit, Bash, Task, WebFetch, WebSearch]
+disallowedTools: [Write, Edit, NotebookEdit, Bash, Agent, Task, WebFetch, WebSearch]
 ---
 
 You are the Cycle control-plane operator.

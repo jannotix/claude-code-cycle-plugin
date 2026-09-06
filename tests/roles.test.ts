@@ -132,8 +132,14 @@ test("every advisory agent declares away the tools that could change anything", 
 
   for (const name of ["architect", "arbiter", "functional-reviewer", "security-reviewer", "executor-advisor", "operator"]) {
     const frontmatter = (await readFile(join(agents, `${name}.md`), "utf8")).split("---")[1] ?? ""
-    const declared = /disallowedTools:\s*\[([^\]]*)\]/u.exec(frontmatter)?.[1] ?? ""
-    for (const tool of ["Write", "Edit", "NotebookEdit", "Bash", "Task"]) {
+    // Split rather than substring-match the raw list: `declared.includes("Edit")` was satisfied by
+    // `NotebookEdit`, so the one entry this test exists to demand could have been missing entirely.
+    const declared = (/disallowedTools:\s*\[([^\]]*)\]/u.exec(frontmatter)?.[1] ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+    // Both names for the subagent tool: the host renamed Task to Agent, and a declaration that
+    // names only one of them is a boundary with a shelf life.
+    for (const tool of ["Write", "Edit", "NotebookEdit", "Bash", "Agent", "Task"]) {
       assert.ok(declared.includes(tool), `${name} must declare ${tool} as disallowed`)
     }
   }

@@ -3,6 +3,46 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.18] - 2026-09-06
+
+### Fixed
+
+- The second of the three layers that separate the roles had stopped enforcing anything. Claude Code
+  renamed the tool that spawns a subagent from `Task` to `Agent`, and the guard knew only the old
+  name — so `hooks.json` did not match the call, the hook was never invoked, and a read-only role
+  asking to delegate was allowed through it. Nothing failed, which is the only way a boundary ever
+  stops being one: the other two layers still held, so there was no symptom to notice. Both names
+  are now refused, declared away by every agent, and covered by a test that asks for each of them.
+- The end-to-end harness that claims twelve certification rows contained no assertion at all. It
+  printed its results and exited zero whatever happened, so `certify.mjs` — which judges a harness
+  by its exit code — counted those rows as evidenced. It has assertions now, and a reply that comes
+  back without a state fails the run rather than being rendered as an approval.
+- That harness had not completed a delivery since 1.0.10. It submitted its browser capture without
+  the capability the freeze issues, so the capture counted as the executor reporting on its own work
+  and the interface layer was never proved; and security proofs became opt-in, so the demonstrated
+  proof the scenario turns on was refused. Three control-plane errors were printed as `approved`,
+  and the run ended in repair with nothing committed. Both causes are fixed, and the harness now
+  fails if the cycle does not deliver.
+- `engines` required Node 22.13.0, because `node:sqlite` is unflagged only from there, while the
+  doctor compared the major alone and passed every 22.x. On 22.0 through 22.12 it reported a healthy
+  runtime and the store then failed to open. The floor is read from `package.json` rather than
+  written a second time in the code, and compared through the patch.
+- A repair budget above five never reached the run. The workflow script bounded its own loop with a
+  literal five while the option accepts twenty, so a configured ten stopped driving at five with the
+  plane still willing to repair. The bound comes from the budget the plane reports.
+- `SECURITY.md` directed reports to GitHub's private advisory form, which was not enabled on the
+  repository. It is now, so the channel the policy names exists.
+
+### Changed
+
+- The requirements name what the product actually needs. `/cycle:run` is a dynamic workflow, so the
+  governed cycle does not start when workflows are off; the doctor reports the two ways to turn them
+  off that are visible from the machine, and says plainly that a plan without the feature is not
+  among them. The Node floor reads 22.13 rather than 22.
+- `SECURITY.md` states the delegation boundary alongside the write boundary. It described the three
+  layers that keep a role inside its scopes and said nothing about the one that keeps work inside
+  the role.
+
 ## [1.0.17] - 2026-08-29
 
 ### Fixed

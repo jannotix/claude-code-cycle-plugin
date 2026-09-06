@@ -81,7 +81,7 @@ approved, after they were verified. Your hooks run when you push.
 
 The executor is the only role that modifies files, and only inside the write scopes its task
 declares. That is enforced three times, independently: each read-only role declares the writing
-tools away; a `PreToolUse` hook denies a write, a subtask or a history-rewriting git call at
+tools away; a `PreToolUse` hook denies a write, a subagent or a history-rewriting git call at
 runtime; and after every task the control plane reads the worktree itself and rejects the task if
 anything changed outside what the plan authorized. The executor's account of what it did is never
 the record of what it did.
@@ -221,10 +221,19 @@ somewhere else.
 
 ## Requirements
 
-- Claude Code
-- Node 22 or later
+- Claude Code, with **dynamic workflows enabled**
+- Node 22.13 or later
 - Git
 - The project's own build, test and verification tools
+
+`/cycle:run` is a workflow, so the governed cycle needs that feature switched on. It is available on
+the paid plans; on Pro it is off until you turn it on from the Dynamic workflows row in `/config`,
+and an organization can disable it for everyone. With it off, every other command still works and
+the one that delivers does not. `/cycle:doctor` reports the settings it can see turning it off, but
+a plan that does not include it is not visible from here, so that one it cannot tell you.
+
+The Node floor is a patch version, not a major one: the store is built on `node:sqlite`, which is
+unflagged only from 22.13.0. Below it the store cannot open, and `/cycle:doctor` says so.
 
 ## License
 

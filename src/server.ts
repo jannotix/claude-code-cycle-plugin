@@ -190,8 +190,8 @@ const permissions: ToolDefinition = {
       boundaries: BOUNDARIES,
       enforcement: [
         "declaration: each read-only role declares the writing tools as disallowed, and every " +
-          "role declares Task as disallowed",
-        "runtime: a PreToolUse hook denies a write by a read-only role, a subtask by any role, " +
+          "role declares the subagent tool as disallowed under both of its names, Agent and Task",
+        "runtime: a PreToolUse hook denies a write by a read-only role, a subagent by any role, " +
           "and a git invocation by the executor that would move HEAD or rewrite history",
         "reconciliation: after each executor task the control plane reads the worktree itself and " +
           "rejects the task if any changed path falls outside the write scopes the plan authorized",

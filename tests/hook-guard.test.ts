@@ -39,13 +39,18 @@ test("a read-only role is denied every writing tool", () => {
   }
 })
 
-// Certification 6.6.
-test("no role may spawn a subtask", () => {
-  for (const role of ["architect", "executor", "arbiter", "operator"]) {
-    const reason = denied(
-      ask({ agent_type: `cycle:${role}`, tool_input: { prompt: "do it" }, tool_name: "Task" }),
-    )
-    assert.match(reason, /subtask/u)
+// Certification 6.6. Both names for the tool: Claude Code renamed `Task` to `Agent` in 2.1.63 and
+// kept the old one as an alias. A guard that knew only `Task` returned null for `Agent` — and the
+// matcher in hooks.json did not list it either, so the hook was never even invoked. This layer had
+// stopped being a boundary without anything failing, which is the only way a boundary ever does.
+test("no role may spawn a subagent, under either name for the tool", () => {
+  for (const role of ["architect", "executor", "arbiter", "operator", "functional-reviewer", "security-reviewer"]) {
+    for (const tool of ["Agent", "Task"]) {
+      const reason = denied(
+        ask({ agent_type: `cycle:${role}`, tool_input: { prompt: "do it" }, tool_name: tool }),
+      )
+      assert.match(reason, /subagent/u)
+    }
   }
 })
 

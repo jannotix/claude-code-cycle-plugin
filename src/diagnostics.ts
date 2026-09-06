@@ -15,7 +15,16 @@ import { verifyHistory } from "./store/history.ts"
 import { graphSize } from "./store/graph.ts"
 import { CURRENT_SCHEMA_VERSION } from "./store/migrations.ts"
 
-const MINIMUM_NODE_MAJOR = 22
+/**
+ * The floor is a patch version, not a major one: the store is built on `node:sqlite`, which is
+ * unflagged only from 22.13.0. Checking the major alone accepted 22.0 through 22.12, where the
+ * doctor reported a healthy runtime and the store then failed to open — a diagnostic that passes
+ * and is then contradicted by the thing it diagnosed.
+ *
+ * Read from `package.json` rather than written here, because two declarations of the same floor is
+ * what produced the mismatch in the first place.
+ */
+const FALLBACK_MINIMUM_NODE = "22.13.0"
 const MEMORY_RESERVE_BYTES = 1024 ** 3
 const DISK_RESERVE_BYTES = 2 * 1024 ** 3
 const PROBE_TIMEOUT_MS = 4_000
@@ -114,6 +123,7 @@ export async function diagnose(
   const models = await probeModels(configuration, environment, findings)
   const store = probeStore(cycle, findings)
   probeIntegrity(cycle, findings)
+  await probeWorkflows(environment, findings)
 
   for (const problem of configuration.invalid) {
     findings.push({ code: "config.invalid", message: problem, severity: "error" })
@@ -319,12 +329,45 @@ async function writtenAt(path: string): Promise<number | null> {
   }
 }
 
+/** Major, minor and patch, so a floor of 22.13.0 is not satisfied by 22.0. */
+export function belowMinimumNode(version: string, floor: string): boolean {
+  const parts = (value: string): number[] => {
+    const found = /(\d+)(?:\.(\d+))?(?:\.(\d+))?/u.exec(value)
+    if (found === null) return []
+    return [found[1], found[2], found[3]].map((part) => Number(part ?? 0))
+  }
+
+  const running = parts(version)
+  const required = parts(floor)
+  // A version this cannot read is reported rather than assumed adequate: unknown is not healthy.
+  if (running.length === 0 || required.length === 0) return true
+
+  for (const [index, needed] of required.entries()) {
+    const have = running[index] ?? 0
+    if (have !== needed) return have < needed
+  }
+  return false
+}
+
+/** The floor `package.json` declares, so the check and the manifest cannot drift apart. */
+async function minimumNode(): Promise<string> {
+  try {
+    const manifest = join(import.meta.dirname, "..", "package.json")
+    const declared: unknown = JSON.parse(await readFile(manifest, "utf8")).engines?.node
+    return /\d+(?:\.\d+){0,2}/u.exec(String(declared ?? ""))?.[0] ?? FALLBACK_MINIMUM_NODE
+  } catch {
+    return FALLBACK_MINIMUM_NODE
+  }
+}
+
 async function probeRuntime(findings: Finding[]): Promise<DoctorReport["runtime"]> {
-  const major = Number(process.versions.node.split(".")[0])
-  if (!Number.isInteger(major) || major < MINIMUM_NODE_MAJOR) {
+  const floor = await minimumNode()
+  if (belowMinimumNode(process.versions.node, floor)) {
     findings.push({
       code: "runtime.node",
-      message: `Node ${process.versions.node} is below the required ${MINIMUM_NODE_MAJOR}.`,
+      message:
+        `Node ${process.versions.node} is below the required ${floor}. The store is built on ` +
+        "node:sqlite, which is unflagged only from that version, so it will not open.",
       severity: "error",
     })
   }
@@ -580,6 +623,46 @@ async function probeModels(
     routedElsewhere: paths.gateway,
     subagentModelOverride,
   }
+}
+
+/**
+ * `/cycle:run` is a dynamic workflow, so the governed cycle does not start when workflows are off:
+ * every other command still answers, and the one that delivers does not.
+ *
+ * Two of the three ways to turn them off are visible from here. The third is a plan that does not
+ * include the feature, which nothing on this machine can see, so this reports what it finds and
+ * never claims the opposite — an absent finding here means "not turned off in the settings this
+ * process can read", not "available".
+ */
+async function probeWorkflows(
+  environment: NodeJS.ProcessEnv,
+  findings: Finding[],
+): Promise<void> {
+  const variable = (environment["CLAUDE_CODE_DISABLE_WORKFLOWS"] ?? "").trim().toLowerCase()
+  const byVariable = variable !== "" && variable !== "0" && variable !== "false"
+
+  let bySetting = false
+  try {
+    const parsed: unknown = JSON.parse(await readFile(settingsPath(environment), "utf8"))
+    bySetting =
+      typeof parsed === "object" &&
+      parsed !== null &&
+      (parsed as Record<string, unknown>)["disableWorkflows"] === true
+  } catch {
+    // No settings file, or one nobody can read. Neither says anything about workflows.
+  }
+
+  if (!byVariable && !bySetting) return
+
+  findings.push({
+    code: "runtime.workflows",
+    message:
+      "Dynamic workflows are turned off " +
+      (byVariable ? "by CLAUDE_CODE_DISABLE_WORKFLOWS" : "by disableWorkflows in the settings file") +
+      ". /cycle:run is a workflow, so no governed cycle can start until it is turned back on. The " +
+      "advisory and reporting commands are unaffected.",
+    severity: "error",
+  })
 }
 
 async function readAllowlist(environment: NodeJS.ProcessEnv): Promise<string[] | null> {

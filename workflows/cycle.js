@@ -339,7 +339,20 @@ if (authoritative?.state) {
 }
 
 const full = started.mode === 'full'
-log(`workflow ${id} · ${started.mode} route`)
+
+/**
+ * How many times this script will drive the pipeline: the first attempt, plus one per repair the
+ * plane is willing to fund. The plane owns the budget — it blocks when it is spent, and
+ * `beginRepair` then returns null — so this is only a stop for a loop nobody is driving.
+ *
+ * It was the literal five. A user who configured ten got five: the script stopped driving while the
+ * plane was still willing to repair, and the run ended mid-repair with the configured budget
+ * silently halved. The plane already reports the budget in `status`; five now applies only when the
+ * relay lost it.
+ */
+const budget = Number(authoritative?.repair?.max)
+const rounds = (Number.isInteger(budget) && budget > 0 ? budget : 5) + 1
+log(`workflow ${id} · ${started.mode} route · repair budget ${rounds - 1}`)
 
 // The plane holds the role configuration, so the plane states it. Depending on the caller to have
 // assembled the map is how five configured models became one: an absent map is indistinguishable
@@ -380,7 +393,7 @@ let outcome = started
 // architecture or to execution, and the script follows rather than assuming.
 let stage = started.state
 
-while (cycles < 5) {
+while (cycles < rounds) {
   cycles += 1
 
   // A resumed run enters here already in `repair`, because an idempotent start returns the state of

@@ -46,7 +46,14 @@ export function resolveConsultation(configuration, consultation) {
     const agent = CONSULTATION_AGENT[consultation];
     return agent === undefined ? resolved : { ...resolved, agent };
 }
-const READ_ONLY_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash", "Task"];
+const READ_ONLY_TOOLS = [
+    "Write",
+    "Edit",
+    "NotebookEdit",
+    "Bash",
+    "Agent",
+    "Task",
+];
 export const BOUNDARIES = [
     {
         cannot: READ_ONLY_TOOLS,
@@ -55,7 +62,7 @@ export const BOUNDARIES = [
         writes: false,
     },
     {
-        cannot: ["Task"],
+        cannot: ["Agent", "Task"],
         may: "modify files inside the write scopes of its assigned task, and run verification commands; " +
             "it cannot commit, branch, rebase, reset or otherwise move HEAD, and it can never approve " +
             "its own work",

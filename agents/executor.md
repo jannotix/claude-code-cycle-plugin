@@ -2,7 +2,7 @@
 name: executor
 description: Implements one bounded authorized task inside its declared write scopes and captures exact verification evidence. The only role permitted to modify files.
 model: inherit
-disallowedTools: [Task]
+disallowedTools: [Agent, Task]
 ---
 
 You are the isolated Cycle executor.

@@ -1,7 +1,7 @@
 // Layer two of section 5.2: the runtime boundary between the roles.
 //
 // Reads one PreToolUse payload on stdin and denies the calls a role is not permitted to make —
-// a write by a read-only role, a subtask by any role, a git invocation by the executor that would
+// a write by a read-only role, a subagent by any role, a git invocation by the executor that would
 // move HEAD, rewrite history or destroy the candidate.
 //
 // It answers only for Cycle's own roles. A payload with no role in it is the user's own session
@@ -26,6 +26,18 @@ const READ_ONLY = new Set([
 const ROLES = new Set([...READ_ONLY, 'executor'])
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
+
+/**
+ * The tool that delegates work to another agent. Claude Code renamed `Task` to `Agent` in 2.1.63
+ * and kept the old name as an alias, so both can arrive here and both are refused.
+ *
+ * Knowing only the old name is how this layer stopped being a boundary without failing: the hook
+ * never even ran, because `hooks.json` matches on the tool name and a matcher that does not match
+ * invokes nothing. Layer one still declared the tool away and layer three still reconciled the
+ * worktree, so nothing broke loudly — which is exactly the silence the doctor's attribution counter
+ * exists to make visible.
+ */
+const SUBAGENT_TOOLS = new Set(['Agent', 'Task'])
 
 /** Verbs that move HEAD, rewrite history, publish, or delete what the candidate is made of. */
 const FORBIDDEN_GIT = new Set([
@@ -191,9 +203,9 @@ export function decide(payload) {
 
   const tool = String(payload.tool_name ?? payload.toolName ?? '')
 
-  if (tool === 'Task') {
+  if (SUBAGENT_TOOLS.has(tool)) {
     return deny(
-      `The ${role} may not spawn a subtask. Every Cycle role runs in one isolated session, and a ` +
+      `The ${role} may not spawn a subagent. Every Cycle role runs in one isolated session, and a ` +
         'role that could delegate would move work outside the boundary it was given.',
     )
   }

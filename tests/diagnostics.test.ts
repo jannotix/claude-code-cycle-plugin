@@ -5,12 +5,47 @@ import { mkdir, utimes, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 
-import { diagnose, type DoctorReport } from "../src/diagnostics.ts"
+import { belowMinimumNode, diagnose, type DoctorReport } from "../src/diagnostics.ts"
 import { renderDoctor } from "../src/report.ts"
 import { settingsPath } from "../src/paths.ts"
 import { Runtime } from "../src/runtime.ts"
 
 const VERSION = "1.0.0"
+
+// The floor `engines` declares is a patch version because node:sqlite is unflagged only from
+// 22.13.0. Comparing the major alone accepted every 22.x, so the doctor reported a healthy runtime
+// on a Node where the store cannot open.
+test("the node floor is compared to the patch, not to the major", () => {
+  for (const version of ["22.0.0", "22.12.0", "22.12.9", "21.99.99", "20.11.0"]) {
+    assert.equal(belowMinimumNode(version, "22.13.0"), true, `${version} must be refused`)
+  }
+  for (const version of ["22.13.0", "22.13.1", "22.14.0", "23.0.0", "26.3.0"]) {
+    assert.equal(belowMinimumNode(version, "22.13.0"), false, `${version} must be accepted`)
+  }
+})
+
+test("a version neither side can read is refused rather than assumed adequate", () => {
+  assert.equal(belowMinimumNode("", "22.13.0"), true)
+  assert.equal(belowMinimumNode("not-a-version", "22.13.0"), true)
+  assert.equal(belowMinimumNode("22.13.0", ""), true)
+})
+
+// The check and the manifest must name the same floor: two declarations of it is what let them
+// drift apart, with `engines` saying 22.13.0 while the doctor accepted 22.0.
+test("the floor the doctor enforces is the one the manifest declares", async () => {
+  const { readFile } = await import("node:fs/promises")
+  const manifest = JSON.parse(
+    await readFile(join(dirname(import.meta.dirname), "package.json"), "utf8"),
+  )
+  const declared = /\d+(?:\.\d+){0,2}/u.exec(String(manifest.engines?.node ?? ""))?.[0]
+
+  assert.ok(declared, "package.json must declare an engines.node floor")
+  // One below the declared floor is refused, the floor itself is not.
+  const [major = 0, minor = 0] = declared.split(".").map(Number)
+  assert.equal(belowMinimumNode(`${major}.${minor - 1}.99`, declared), true)
+  assert.equal(belowMinimumNode(declared, declared), false)
+  assert.equal(belowMinimumNode(process.versions.node, declared), false, "this runtime meets it")
+})
 
 interface Case {
   readonly close: () => void
@@ -54,6 +89,52 @@ async function report(subject: Case): Promise<DoctorReport> {
 }
 
 const codes = (result: DoctorReport): string[] => result.findings.map((finding) => finding.code)
+
+// `/cycle:run` is a dynamic workflow, so the product's central command does not start when
+// workflows are off. The README names the requirement; this is the doctor catching the two ways to
+// turn them off that are visible from this machine.
+test("workflows turned off by the environment variable are reported as a failure", async () => {
+  const subject = isolated({}, { CLAUDE_CODE_DISABLE_WORKFLOWS: "1" })
+  try {
+    const result = await report(subject)
+    const finding = result.findings.find((entry) => entry.code === "runtime.workflows")
+
+    assert.ok(finding !== undefined, "the doctor must say the governed cycle cannot start")
+    assert.equal(finding?.severity, "error")
+    assert.ok(finding?.message.includes("CLAUDE_CODE_DISABLE_WORKFLOWS"))
+    assert.equal(result.ok, false)
+  } finally {
+    subject.close()
+  }
+})
+
+test("workflows turned off in the settings file are reported too", async () => {
+  const subject = isolated()
+  try {
+    await writeFile(settingsPath(subject.environment), JSON.stringify({ disableWorkflows: true }))
+    const result = await report(subject)
+    const finding = result.findings.find((entry) => entry.code === "runtime.workflows")
+
+    assert.ok(finding !== undefined)
+    assert.ok(finding?.message.includes("disableWorkflows"))
+  } finally {
+    subject.close()
+  }
+})
+
+// An absent finding means "nothing this process can read turns them off", never "available": a plan
+// that does not include the feature is not visible from here, and saying otherwise would be the
+// kind of claim this product exists to refuse.
+test("a value that does not turn workflows off raises nothing", async () => {
+  for (const value of ["", "0", "false"]) {
+    const subject = isolated({}, { CLAUDE_CODE_DISABLE_WORKFLOWS: value })
+    try {
+      assert.equal(codes(await report(subject)).includes("runtime.workflows"), false, value)
+    } finally {
+      subject.close()
+    }
+  }
+})
 
 // The counter behind this finding used to count the variables present rather than the values in
 // them, so a host that resolved every option to an empty string reported a full delivery and this

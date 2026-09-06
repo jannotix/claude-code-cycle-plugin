@@ -95,7 +95,19 @@ export interface RoleBoundary {
   readonly writes: boolean
 }
 
-const READ_ONLY_TOOLS: readonly string[] = ["Write", "Edit", "NotebookEdit", "Bash", "Task"]
+/**
+ * `Agent` and `Task` are the same tool: the host renamed it in 2.1.63 and kept the old name as an
+ * alias. Both are declared away, because a boundary that names only the version it was written
+ * against expires the day the thing it guards is renamed.
+ */
+const READ_ONLY_TOOLS: readonly string[] = [
+  "Write",
+  "Edit",
+  "NotebookEdit",
+  "Bash",
+  "Agent",
+  "Task",
+]
 
 /**
  * The boundaries between the roles, stated once so `/cycle:permissions` reports the same thing the
@@ -111,7 +123,7 @@ export const BOUNDARIES: readonly RoleBoundary[] = [
     writes: false,
   },
   {
-    cannot: ["Task"],
+    cannot: ["Agent", "Task"],
     may:
       "modify files inside the write scopes of its assigned task, and run verification commands; " +
       "it cannot commit, branch, rebase, reset or otherwise move HEAD, and it can never approve " +

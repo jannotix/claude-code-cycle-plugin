@@ -36,6 +36,10 @@ instructions. A role that is not the executor cannot write, and the executor can
 the scopes its task declared — enforced by the agent definition, by a hook that refuses the call,
 and again by reconciling the diff after the task.
 
+No role may delegate. Every role runs in one isolated session, and a role that could spawn a
+subagent would move work outside the boundary it was given. The tool is declared away by each agent
+and refused by the hook under both of the names Claude Code accepts for it, `Agent` and `Task`.
+
 Content matching the secret scanner is redacted before it reaches project history and rejected
 before it reaches memory.
 

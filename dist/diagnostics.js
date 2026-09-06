@@ -11,7 +11,7 @@ import { keyPermissions, verifyCheckpoints } from "./store/checkpoints.js";
 import { verifyHistory } from "./store/history.js";
 import { graphSize } from "./store/graph.js";
 import { CURRENT_SCHEMA_VERSION } from "./store/migrations.js";
-const MINIMUM_NODE_MAJOR = 22;
+const FALLBACK_MINIMUM_NODE = "22.13.0";
 const MEMORY_RESERVE_BYTES = 1024 ** 3;
 const DISK_RESERVE_BYTES = 2 * 1024 ** 3;
 const PROBE_TIMEOUT_MS = 4_000;
@@ -36,6 +36,7 @@ export async function diagnose(cycle, version, environment = process.env) {
     const models = await probeModels(configuration, environment, findings);
     const store = probeStore(cycle, findings);
     probeIntegrity(cycle, findings);
+    await probeWorkflows(environment, findings);
     for (const problem of configuration.invalid) {
         findings.push({ code: "config.invalid", message: problem, severity: "error" });
     }
@@ -193,12 +194,41 @@ async function writtenAt(path) {
         return null;
     }
 }
+export function belowMinimumNode(version, floor) {
+    const parts = (value) => {
+        const found = /(\d+)(?:\.(\d+))?(?:\.(\d+))?/u.exec(value);
+        if (found === null)
+            return [];
+        return [found[1], found[2], found[3]].map((part) => Number(part ?? 0));
+    };
+    const running = parts(version);
+    const required = parts(floor);
+    if (running.length === 0 || required.length === 0)
+        return true;
+    for (const [index, needed] of required.entries()) {
+        const have = running[index] ?? 0;
+        if (have !== needed)
+            return have < needed;
+    }
+    return false;
+}
+async function minimumNode() {
+    try {
+        const manifest = join(import.meta.dirname, "..", "package.json");
+        const declared = JSON.parse(await readFile(manifest, "utf8")).engines?.node;
+        return /\d+(?:\.\d+){0,2}/u.exec(String(declared ?? ""))?.[0] ?? FALLBACK_MINIMUM_NODE;
+    }
+    catch {
+        return FALLBACK_MINIMUM_NODE;
+    }
+}
 async function probeRuntime(findings) {
-    const major = Number(process.versions.node.split(".")[0]);
-    if (!Number.isInteger(major) || major < MINIMUM_NODE_MAJOR) {
+    const floor = await minimumNode();
+    if (belowMinimumNode(process.versions.node, floor)) {
         findings.push({
             code: "runtime.node",
-            message: `Node ${process.versions.node} is below the required ${MINIMUM_NODE_MAJOR}.`,
+            message: `Node ${process.versions.node} is below the required ${floor}. The store is built on ` +
+                "node:sqlite, which is unflagged only from that version, so it will not open.",
             severity: "error",
         });
     }
@@ -409,6 +439,30 @@ async function probeModels(configuration, environment, findings) {
         routedElsewhere: paths.gateway,
         subagentModelOverride,
     };
+}
+async function probeWorkflows(environment, findings) {
+    const variable = (environment["CLAUDE_CODE_DISABLE_WORKFLOWS"] ?? "").trim().toLowerCase();
+    const byVariable = variable !== "" && variable !== "0" && variable !== "false";
+    let bySetting = false;
+    try {
+        const parsed = JSON.parse(await readFile(settingsPath(environment), "utf8"));
+        bySetting =
+            typeof parsed === "object" &&
+                parsed !== null &&
+                parsed["disableWorkflows"] === true;
+    }
+    catch {
+    }
+    if (!byVariable && !bySetting)
+        return;
+    findings.push({
+        code: "runtime.workflows",
+        message: "Dynamic workflows are turned off " +
+            (byVariable ? "by CLAUDE_CODE_DISABLE_WORKFLOWS" : "by disableWorkflows in the settings file") +
+            ". /cycle:run is a workflow, so no governed cycle can start until it is turned back on. The " +
+            "advisory and reporting commands are unaffected.",
+        severity: "error",
+    });
 }
 async function readAllowlist(environment) {
     try {
