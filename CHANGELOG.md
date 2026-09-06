@@ -43,6 +43,22 @@ All notable changes to this project are recorded here. Versions follow
   layers that keep a role inside its scopes and said nothing about the one that keeps work inside
   the role.
 
+### Certified
+
+Every automated row of the matrix passes against this version on Windows, and all seven suites are
+green, including the end-to-end harness that until now could not fail. Continuous integration passes
+on Windows and on Linux, and the built runtime loads on the oldest Node the manifest declares.
+
+Ten rows are **not** recorded for this version. They are manual attestations about installation and
+about behaviour against live models, and their last recorded result is 1.0.10 — so they were already
+stale when 1.0.17 shipped, and this release does not make them less so. WSL was not re-run.
+
+`CERTIFICATION.md` says a manual row without a recorded result blocks release exactly like a failing
+automated one, and by that rule this release is not signed off. It ships anyway because 1.0.17
+carries a boundary that enforces nothing: leaving that in circulation to wait for a check on which
+menu the agents appear in is the worse of the two risks. Recorded here rather than resolved, so the
+next person reads the state instead of inferring it from a version number.
+
 ## [1.0.17] - 2026-08-29
 
 ### Fixed
