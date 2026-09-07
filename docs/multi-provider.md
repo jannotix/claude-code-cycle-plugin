@@ -1,7 +1,8 @@
 # Per-role providers
 
-Cycle names a model for each role. What answers is your infrastructure. This page is a placeholder
-guide: it contains no endpoint, no key and no personal configuration, and it never will.
+Cycle names a model for each role. What answers is your infrastructure. This page holds every shape
+you need and no value that is yours: no endpoint, no key, no personal configuration, and it never
+will. Where a real address or identifier belongs, it says so and stops.
 
 > Cycle never reads, stores or transmits a provider credential. Nothing on this page asks you to
 > give one to the plugin, because there is nowhere in the plugin for one to go.

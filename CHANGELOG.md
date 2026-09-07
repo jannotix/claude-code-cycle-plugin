@@ -3,6 +3,25 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.21] - 2026-09-07
+
+### Added
+
+- A build provenance attestation for the published archive, on tags only. It binds those exact bytes
+  to the workflow, the commit and the run that produced them, and `gh attestation verify` checks it
+  from outside without trusting anyone's key. It earns its place because the archive is
+  reproducible: packaging 1.0.19 on Windows and in WSL produced the same digest byte for byte, so a
+  third party can rebuild it and compare rather than take the attestation's word for it. The job
+  also refuses to attest bytes the marketplace does not pin, which is the drift that would make an
+  attestation name something nobody installs.
+
+### Changed
+
+- The multi-provider guide called itself a placeholder, and the README repeated it. It is not one:
+  it works through the credential path, the per-role naming, and a gateway end to end. What it holds
+  back is every value that would be yours — no endpoint, no key, no configuration — which is a
+  boundary, not an omission. Both now say that instead.
+
 ## [1.0.20] - 2026-09-07
 
 Found by certification row 13.6 on WSL, the first governed cycle in which the two independent

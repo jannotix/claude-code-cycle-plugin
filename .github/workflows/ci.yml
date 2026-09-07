@@ -17,6 +17,50 @@ permissions:
   contents: read
 
 jobs:
+  # A build provenance attestation for the archive a release publishes: it binds those exact bytes to
+  # this workflow, this commit and this run, and `gh attestation verify` checks it from outside
+  # without trusting anyone's key. It earns its place because the archive is reproducible — packaging
+  # 1.0.19 on Windows and in WSL produced the same digest byte for byte — so a third party can
+  # rebuild it and compare rather than take the attestation's word for it. Tags only: an attestation
+  # for a commit nobody can install is noise.
+  provenance:
+    if: startsWith(github.ref, 'refs/tags/cycle--v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run package
+
+      # The digest the marketplace pins is the digest this attests. If packaging here produced
+      # different bytes than the release carries, the attestation would name bytes nobody installs,
+      # so the two are compared rather than assumed equal.
+      - name: the packaged archive matches what the marketplace pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(ls build/cycle-*.zip)"
+          built="$(sha256sum "$archive" | cut -d' ' -f1)"
+          pinned="$(node -p "require('./.claude-plugin/marketplace.json').plugins[0].source.sha256")"
+          echo "built  $built"
+          echo "pinned $pinned"
+          [ "$built" = "$pinned" ] || { echo "the marketplace pins a digest this build does not produce" >&2; exit 1; }
+
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: build/cycle-*.zip
+
   check:
     strategy:
       fail-fast: false

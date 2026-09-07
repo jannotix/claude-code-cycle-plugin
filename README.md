@@ -132,8 +132,9 @@ Different **providers** per role need an LLM gateway of your own, because Claude
 inherit the session provider. Cycle names a model per role; what answers is your infrastructure.
 `/cycle:models` reports what each role resolved to, which provider path carries it and what is
 billed — subscription or a credential — so five verdicts are never assumed to be independent when
-one model produced all five. [the multi-provider guide](https://github.com/jannotix/claude-code-cycle-plugin/blob/main/docs/multi-provider.md) is a placeholder guide
-to setting that up.
+one model produced all five. The [multi-provider guide](https://github.com/jannotix/claude-code-cycle-plugin/blob/main/docs/multi-provider.md) works
+through the credential path, the per-role naming and a concrete gateway, with every value that would
+be yours left blank.
 
 Cycle never reads, stores or transmits a provider credential. It never configures a gateway, and it
 never asks for a key.
