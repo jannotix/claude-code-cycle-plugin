@@ -185,6 +185,46 @@ function bsdtar(): string | null {
 
 // The reversed polynomial was wrong once, and lenient readers accepted the result. A known answer
 // catches that without needing an external tool.
+// The published archive is pinned by digest and the release attests those exact bytes, so two
+// builds of the same files have to match. They did not: the DOS stamp was read with local-time
+// getters, so a UTC+1 machine wrote 01:00 into all 119 local headers where a UTC runner wrote
+// 00:00, and continuous integration could not reproduce what the marketplace pinned. It went
+// unseen because the two machines that had been compared sat in the same zone.
+//
+// Asserting the exact bytes is what makes this a timezone test: on a machine anywhere but UTC it
+// fails the moment anyone reads the stamp locally again.
+test("the archive timestamp is the same bytes in every timezone", () => {
+  const zip = createZip([{ data: Buffer.from("x"), path: "a.txt" }]) as Buffer
+
+  // Local header: signature, version, flags, method, then time and date at offsets 10 and 12.
+  const time = zip.readUInt16LE(10)
+  const date = zip.readUInt16LE(12)
+
+  assert.equal(time, 0, `expected midnight, got ${(time >> 11) & 0x1f}:${(time >> 5) & 0x3f}`)
+  // 1980-01-01, the format's own epoch: the smallest stamp it can hold without wrapping.
+  assert.equal((date >> 9) + 1980, 1980)
+  assert.equal((date >> 5) & 0x0f, 1)
+  assert.equal(date & 0x1f, 1)
+
+  // The central directory carries the same stamp, at its own offsets.
+  const central = zip.indexOf(Buffer.from("504b0102", "hex"))
+  assert.ok(central > 0, "the archive has a central directory")
+  assert.equal(zip.readUInt16LE(central + 12), time)
+  assert.equal(zip.readUInt16LE(central + 14), date)
+})
+
+// Two builds of the same entries are the same archive, whatever the machine.
+test("packaging the same entries twice produces the same bytes", () => {
+  const entries = [
+    { data: Buffer.from("alpha"), path: "src/a.js" },
+    { data: Buffer.from("beta"), path: "README.md" },
+  ]
+  const first = createZip(entries) as Buffer
+  const second = createZip(entries) as Buffer
+
+  assert.ok(first.equals(second))
+})
+
 test("the archive checksum matches the CRC-32 known answer", () => {
   const archive = createZip([{ data: Buffer.from("123456789"), path: "a" }]) as Buffer
 

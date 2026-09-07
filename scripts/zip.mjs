@@ -27,16 +27,29 @@ function crc32(data) {
   return (crc ^ 0xff_ff_ff_ff) >>> 0
 }
 
-// MS-DOS date and time, the only timestamp the base format carries.
+/**
+ * The smallest timestamp the format can hold. MS-DOS counts years from 1980, so anything earlier —
+ * the Unix epoch, for one — wraps: 1970 became 2098 in every archive this wrote before.
+ */
+const DOS_EPOCH = new Date(Date.UTC(1980, 0, 1, 0, 0, 0))
+
+/**
+ * MS-DOS date and time, the only timestamp the base format carries.
+ *
+ * Read in UTC, not in the machine's zone. Reading it locally made the archive depend on where it
+ * was built: the same fixed instant became 01:00 on a UTC+1 machine and 00:00 on a UTC runner, one
+ * byte different in all 119 local headers, and two builds of identical files did not match. It went
+ * unnoticed because both machines that had been compared sat in the same zone.
+ */
 function dosStamp(date) {
   const time =
-    (Math.floor(date.getSeconds() / 2) & 0x1f) |
-    ((date.getMinutes() & 0x3f) << 5) |
-    ((date.getHours() & 0x1f) << 11)
+    (Math.floor(date.getUTCSeconds() / 2) & 0x1f) |
+    ((date.getUTCMinutes() & 0x3f) << 5) |
+    ((date.getUTCHours() & 0x1f) << 11)
   const day =
-    (date.getDate() & 0x1f) |
-    (((date.getMonth() + 1) & 0x0f) << 5) |
-    (((date.getFullYear() - 1980) & 0x7f) << 9)
+    (date.getUTCDate() & 0x1f) |
+    (((date.getUTCMonth() + 1) & 0x0f) << 5) |
+    (((date.getUTCFullYear() - 1980) & 0x7f) << 9)
   return { day, time }
 }
 
@@ -45,7 +58,7 @@ function dosStamp(date) {
  * @param {Date} modified one timestamp for every entry, so the archive is reproducible
  * @returns {Buffer}
  */
-export function createZip(entries, modified = new Date(0)) {
+export function createZip(entries, modified = DOS_EPOCH) {
   const stamp = dosStamp(modified)
   const locals = []
   const central = []

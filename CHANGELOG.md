@@ -3,6 +3,25 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.22] - 2026-09-07
+
+### Fixed
+
+- The published archive was not reproducible, and the attestation added one release earlier is what
+  found it. Continuous integration packaged 1.0.21 from the same commit and got a different digest
+  than the marketplace pinned. All 119 entries were byte-identical and in the same order: the
+  difference was one field in every local header, the MS-DOS timestamp, read with local-time getters
+  from a fixed instant. A machine at UTC+1 wrote 01:00 where a UTC runner wrote 00:00. It had gone
+  unnoticed because the two machines compared before both sat in the same zone, which is how a
+  reproducibility claim can be true of the comparison and false of the property.
+- That fixed instant was the Unix epoch, below the 1980 the format counts from, so every archive
+  this ever wrote dated itself 2098-01-01 through the wraparound. Entries now carry 1980-01-01
+  00:00 UTC, the smallest stamp the format holds.
+
+Two tests cover it: one asserts the exact stamp bytes, which is what makes it a timezone test —
+anywhere but UTC it fails the moment the stamp is read locally again — and one asserts that
+packaging the same entries twice gives the same bytes.
+
 ## [1.0.21] - 2026-09-07
 
 ### Added
