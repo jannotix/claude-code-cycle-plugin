@@ -72,14 +72,18 @@ const DEFAULT_MODEL: Readonly<Record<Role, string>> = {
   operator: "haiku",
 }
 
-// Both reviewers share one effort option; the rest map one to one.
-const EFFORT_OPTION: Readonly<Record<Role, string>> = {
+/**
+ * Both reviewers share one effort option; the rest map one to one. The operator has none: it makes
+ * one deterministic control-plane call and reports its exact result, so effort buys nothing there,
+ * and the host never offered the knob. A build that read one would be reading an option no user can
+ * set, which is why `OPERATOR_EFFORT` now reports as unknown like any other name we do not honour.
+ */
+const EFFORT_OPTION: Readonly<Partial<Record<Role, string>>> = {
   architect: "ARCHITECT_EFFORT",
   executor: "EXECUTOR_EFFORT",
   functional_reviewer: "REVIEWER_EFFORT",
   security_reviewer: "REVIEWER_EFFORT",
   arbiter: "ARBITER_EFFORT",
-  operator: "OPERATOR_EFFORT",
 }
 
 const PREFIX = "CLAUDE_PLUGIN_OPTION_"
@@ -91,9 +95,13 @@ export function readConfiguration(environment: NodeJS.ProcessEnv = process.env):
 
   for (const role of ROLES) {
     const modelKey = `${role.toUpperCase()}_MODEL`
-    known.add(modelKey).add(EFFORT_OPTION[role])
+    const effortKey = EFFORT_OPTION[role]
+    known.add(modelKey)
+    if (effortKey) known.add(effortKey)
     roles[role] = {
-      effort: readEffort(environment, EFFORT_OPTION[role], DEFAULT_EFFORT[role], invalid),
+      effort: effortKey
+        ? readEffort(environment, effortKey, DEFAULT_EFFORT[role], invalid)
+        : DEFAULT_EFFORT[role],
       model: readModel(environment, modelKey, DEFAULT_MODEL[role], invalid),
     }
   }

@@ -31,7 +31,6 @@ const EFFORT_OPTION = {
     functional_reviewer: "REVIEWER_EFFORT",
     security_reviewer: "REVIEWER_EFFORT",
     arbiter: "ARBITER_EFFORT",
-    operator: "OPERATOR_EFFORT",
 };
 const PREFIX = "CLAUDE_PLUGIN_OPTION_";
 export function readConfiguration(environment = process.env) {
@@ -40,9 +39,14 @@ export function readConfiguration(environment = process.env) {
     const known = new Set(["DATA_DIR", "GATE_STRICTNESS", "MAX_REPAIR_CYCLES", "SECURITY_PROOFS"]);
     for (const role of ROLES) {
         const modelKey = `${role.toUpperCase()}_MODEL`;
-        known.add(modelKey).add(EFFORT_OPTION[role]);
+        const effortKey = EFFORT_OPTION[role];
+        known.add(modelKey);
+        if (effortKey)
+            known.add(effortKey);
         roles[role] = {
-            effort: readEffort(environment, EFFORT_OPTION[role], DEFAULT_EFFORT[role], invalid),
+            effort: effortKey
+                ? readEffort(environment, effortKey, DEFAULT_EFFORT[role], invalid)
+                : DEFAULT_EFFORT[role],
             model: readModel(environment, modelKey, DEFAULT_MODEL[role], invalid),
         };
     }

@@ -520,3 +520,52 @@ test("the executor's own capture does not satisfy the interface layer", async ()
     item.close()
   }
 })
+
+/**
+ * D2, at the layer the user meets it. An unresolved reach is a line in the record with the reason
+ * and the command that fixes it — a warning that does not block under `standard`, and a refusal
+ * under `strict`, which respects the knob that already exists instead of inventing a second one.
+ */
+test("an unresolved reach is recorded, and is only mandatory under strict", async () => {
+  const item = fixture()
+  try {
+    item.write("src/thing.ts", "export const thing = 1\n")
+    const workflowId = await freeze(item)
+
+    const standard = await verifyFixture(item, workflowId)
+    const recorded = gate(standard.evidence, "impact:unresolved")
+
+    assert.equal(recorded?.status, "failed", "the graph was never built, so the reach is unknown")
+    assert.equal(recorded?.mandatory, false, "an unindexed project is not blocked on its first cycle")
+    assert.match(gateOutput(item, "impact:unresolved"), /never been indexed/u)
+    assert.match(gateOutput(item, "impact:unresolved"), /cycle:index/u)
+
+    const strict = await verifyFixture(item, workflowId, "strict")
+    assert.equal(gate(strict.evidence, "impact:unresolved")?.mandatory, true)
+    assert.equal(strict.outcome.mandatoryPassed, false, "under strict, an unknown reach refuses")
+  } finally {
+    item.close()
+  }
+})
+
+/** And the other side of it: a graph that covers the change produces a resolved line, not silence. */
+test("a resolved reach is recorded as evidence a reviewer can read", async () => {
+  const item = fixture()
+  try {
+    item.write("src/thing.ts", "export const thing = 1\n")
+    const workflowId = await freeze(item)
+    replaceFile(
+      item.ctx.database,
+      "p1",
+      { digest: "a", indexedAt: 1, language: "typescript", modifiedAt: 0, path: "src/thing.ts", references: [], size: 1 },
+      [{ digest: "d", endLine: 2, kind: "function", language: "typescript", name: "thing", path: "src/thing.ts", startLine: 1 }],
+    )
+
+    const { evidence } = await verifyFixture(item, workflowId, "strict")
+
+    assert.equal(gate(evidence, "impact:unresolved")?.status, "passed")
+    assert.match(gateOutput(item, "impact:unresolved"), /the reach is resolved/u)
+  } finally {
+    item.close()
+  }
+})

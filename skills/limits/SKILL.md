@@ -5,6 +5,8 @@ description: What Cycle is allowed to take from this machine, what the machine h
 
 Admission and resource governance: $ARGUMENTS
 
+If the ask is about disk, store size, growth or clearing space, go to **What the store holds** below. Otherwise:
+
 1. Call `mcp__plugin_cycle_control__limits` with `{"operation": "status"}`.
 2. Report, in this order:
    - **`pressure`** — if it is not null, this is the answer. Say it verbatim: it names the reserve
@@ -29,6 +31,20 @@ takes more than two. A project working alone uses all of them.
 
 After a pressured reading, admissions are throttled while the machine recovers, so it is not
 immediately refilled by whatever was waiting.
+
+## What the store holds
+
+`{"operation": "usage"}` reports it: `retained` is the candidate bytes kept for this project,
+`prunable` the part of them that can be given back, and `counts` the workflows, candidates and
+history entries behind those numbers.
+
+`{"operation": "prune"}` gives it back. Without `"confirm": true` it only reports what it would
+free, so run it that way first and show the user the number before asking.
+
+Only the *bytes* of a finished workflow's candidates go. Every row stays, with its digest, so what
+a candidate contained remains provable after its bytes are gone, and the history chain is untouched
+— pruning is not deleting a record, and nothing here can be used to remove evidence. A running
+workflow keeps its bytes whatever anyone asks.
 
 ## When something is deferred
 

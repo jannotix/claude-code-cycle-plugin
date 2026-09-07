@@ -15,6 +15,7 @@ const FALLBACK_MINIMUM_NODE = "22.13.0";
 const MEMORY_RESERVE_BYTES = 1024 ** 3;
 const DISK_RESERVE_BYTES = 2 * 1024 ** 3;
 const PROBE_TIMEOUT_MS = 4_000;
+const PACKAGE_MANAGERS = ["npm", "bun", "pnpm", "yarn"];
 async function guardAttribution(dataDirectory) {
     try {
         const raw = await readFile(join(dataDirectory, "guard-attribution.json"), "utf8");
@@ -232,7 +233,10 @@ async function probeRuntime(findings) {
             severity: "error",
         });
     }
-    const git = await probeVersion("git", ["--version"], PROBE_TIMEOUT_MS);
+    const [git, ...managers] = await Promise.all([
+        probeVersion("git", ["--version"], PROBE_TIMEOUT_MS),
+        ...PACKAGE_MANAGERS.map((name) => probeVersion(name, ["--version"], PROBE_TIMEOUT_MS)),
+    ]);
     if (git === null) {
         findings.push({
             code: "runtime.git",
@@ -241,9 +245,9 @@ async function probeRuntime(findings) {
         });
     }
     const packageManagers = [];
-    for (const name of ["npm", "bun", "pnpm", "yarn"]) {
-        const probe = await probeVersion(name, ["--version"], PROBE_TIMEOUT_MS);
-        if (probe !== null) {
+    for (const [at, name] of PACKAGE_MANAGERS.entries()) {
+        const probe = managers[at];
+        if (probe != null) {
             packageManagers.push({ kind: probe.resolved.kind, name, version: probe.version });
         }
     }

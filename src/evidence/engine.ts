@@ -16,6 +16,7 @@ import {
   type GateStatus,
   type VerificationOutcome,
 } from "./gates.ts"
+import { reachOf, type Reach } from "./reach.ts"
 import { requiredMissingGates } from "./required.ts"
 import { runCommand } from "./runner.ts"
 
@@ -73,6 +74,38 @@ const ESSENTIALITY: Gate = {
 }
 
 /**
+ * D2. An unresolved reach is a recorded piece of evidence, not a silence. Mandatory only under
+ * `strict`, which respects the strictness knob that already exists rather than inventing a second
+ * one: a project that has never been indexed is not blocked on its first cycle, but the gap is in
+ * the record and the reviewers read it.
+ */
+const IMPACT_UNRESOLVED: Gate = {
+  executor: { kind: "impact" },
+  invocation: "",
+  kind: "inspection",
+  mandatory: false,
+  name: "impact:unresolved",
+  precondition: "what the change reaches is computed from the code graph, or said to be unknown",
+  timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+}
+
+/**
+ * D3. A change to a widely consumed symbol does not become a maximal cycle: past a threshold the
+ * reached set stops being information, so it is reported as a finding naming the hubs and their
+ * consumer counts instead of expanding into hundreds of gates. Never mandatory — it is something
+ * the reviewers should know, not a reason to refuse.
+ */
+const IMPACT_FAN_IN: Gate = {
+  executor: { kind: "impact" },
+  invocation: "",
+  kind: "inspection",
+  mandatory: false,
+  name: "impact:high-fan-in",
+  precondition: "a change reaching more of the project than a threshold is reported, not expanded",
+  timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+}
+
+/**
  * Runs every gate this candidate must satisfy and records each result as evidence. The outcome is
  * derived from what was recorded, never from what a role reported: an agent's claim of success is
  * not evidence.
@@ -90,11 +123,18 @@ export async function verify(input: VerificationInput): Promise<VerificationOutc
 
   // Evidence submitted before verification — a browser attestation with its accessibility tree —
   // already supplies the layer it covers, so the missing-gate for that layer is not inserted.
+  // D1. The rules are matched against what the change reaches as well as what it touches, so a
+  // line in a configuration loader imported by src/auth/session.ts requires the security proof
+  // without anyone having touched auth. Adding paths can only add gates, so the routing stays
+  // deterministic and cheap while the proof surface follows the code.
+  const reach = reachOf(input.database, input.projectId, present.map((file) => file.path))
+  results.push(impact(reach, input.strictness))
+
   const recorded = loadEvidence(input.database, input.candidateId).map((item) => item.gateName)
   const discovered = await discoverGates(input.root, input.taskCommands)
   const gates = [
     ...discovered.gates,
-    ...requiredMissingGates(present, discovered.gates, input.strictness, recorded),
+    ...requiredMissingGates(present, discovered.gates, input.strictness, recorded, reach.paths),
   ]
 
   for (const gate of gates) results.push(await execute(gate, input))
@@ -252,6 +292,46 @@ function essentiality(input: VerificationInput, changed: readonly ChangedFile[])
               (entry) => `${entry.kind} ${entry.name}: added in ${entry.addedIn}, already in ${entry.existsIn}`,
             ),
           ].join("\n"),
+  })
+}
+
+/**
+ * One line of evidence for what the change reaches. Three shapes, and the wording of each is the
+ * claim it makes: resolved and bounded, resolved but too wide to expand, or unknown with the
+ * reason. Preferring the third to a confident wrong answer is the whole design.
+ */
+function impact(reach: Reach, strictness: GateStrictness): Evidence {
+  const startedAt = Date.now()
+  // Mandatory only under strict, which is what the knob is for.
+  const unresolved: Gate = { ...IMPACT_UNRESOLVED, mandatory: strictness === "strict" }
+  const outside =
+    reach.outside.length === 0
+      ? ""
+      : `\n${reach.outside.length} changed files are in a language the graph has no grammar for, ` +
+        `so they are outside the model rather than missing from it: ` +
+        `${reach.outside.slice(0, 5).join(", ")}${reach.outside.length > 5 ? ", …" : ""}`
+
+  if (reach.confidence === "unresolved") {
+    return evidenceFor(unresolved, startedAt, "failed", {
+      output: `${reach.reason}${outside}`,
+    })
+  }
+
+  if (reach.truncated) {
+    return evidenceFor(IMPACT_FAN_IN, startedAt, "warning", {
+      output: [
+        "the change reaches more of the project than the threshold, so the evidence surface was " +
+          "not expanded. The symbols it touches with the most consumers:",
+        ...reach.hubs.map((hub) => `  ${hub.name} (${hub.path}): ${hub.consumers} consumers`),
+      ].join("\n") + outside,
+    })
+  }
+
+  return evidenceFor(IMPACT_UNRESOLVED, startedAt, "passed", {
+    output:
+      `the reach is resolved: ${reach.paths.length} files are reached without being touched` +
+      `${reach.paths.length === 0 ? "" : `, including ${reach.paths.slice(0, 5).join(", ")}`}` +
+      outside,
   })
 }
 

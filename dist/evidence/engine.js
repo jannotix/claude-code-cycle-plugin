@@ -7,6 +7,7 @@ import { inspectDesign, isInterfaceFile } from "./design.js";
 import { discoverGates } from "./discovery.js";
 import { reimplementedCapabilities } from "./essentiality.js";
 import { DEFAULT_TIMEOUT_SECONDS, evidenceFor, } from "./gates.js";
+import { reachOf } from "./reach.js";
 import { requiredMissingGates } from "./required.js";
 import { runCommand } from "./runner.js";
 const INTEGRITY = {
@@ -45,6 +46,24 @@ const ESSENTIALITY = {
     precondition: "added definitions are checked against the code graph for an existing equivalent",
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
 };
+const IMPACT_UNRESOLVED = {
+    executor: { kind: "impact" },
+    invocation: "",
+    kind: "inspection",
+    mandatory: false,
+    name: "impact:unresolved",
+    precondition: "what the change reaches is computed from the code graph, or said to be unknown",
+    timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+};
+const IMPACT_FAN_IN = {
+    executor: { kind: "impact" },
+    invocation: "",
+    kind: "inspection",
+    mandatory: false,
+    name: "impact:high-fan-in",
+    precondition: "a change reaching more of the project than a threshold is reported, not expanded",
+    timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+};
 export async function verify(input) {
     const changed = await changedFiles(input.root);
     const results = [];
@@ -53,11 +72,13 @@ export async function verify(input) {
     results.push(await secretScan(input.root, present));
     results.push(essentiality(input, present));
     results.push(await design(input.root, present));
+    const reach = reachOf(input.database, input.projectId, present.map((file) => file.path));
+    results.push(impact(reach, input.strictness));
     const recorded = loadEvidence(input.database, input.candidateId).map((item) => item.gateName);
     const discovered = await discoverGates(input.root, input.taskCommands);
     const gates = [
         ...discovered.gates,
-        ...requiredMissingGates(present, discovered.gates, input.strictness, recorded),
+        ...requiredMissingGates(present, discovered.gates, input.strictness, recorded, reach.paths),
     ];
     for (const gate of gates)
         results.push(await execute(gate, input));
@@ -177,6 +198,34 @@ function essentiality(input, changed) {
                 "added code duplicates a capability the project already has",
                 ...duplicates.map((entry) => `${entry.kind} ${entry.name}: added in ${entry.addedIn}, already in ${entry.existsIn}`),
             ].join("\n"),
+    });
+}
+function impact(reach, strictness) {
+    const startedAt = Date.now();
+    const unresolved = { ...IMPACT_UNRESOLVED, mandatory: strictness === "strict" };
+    const outside = reach.outside.length === 0
+        ? ""
+        : `\n${reach.outside.length} changed files are in a language the graph has no grammar for, ` +
+            `so they are outside the model rather than missing from it: ` +
+            `${reach.outside.slice(0, 5).join(", ")}${reach.outside.length > 5 ? ", …" : ""}`;
+    if (reach.confidence === "unresolved") {
+        return evidenceFor(unresolved, startedAt, "failed", {
+            output: `${reach.reason}${outside}`,
+        });
+    }
+    if (reach.truncated) {
+        return evidenceFor(IMPACT_FAN_IN, startedAt, "warning", {
+            output: [
+                "the change reaches more of the project than the threshold, so the evidence surface was " +
+                    "not expanded. The symbols it touches with the most consumers:",
+                ...reach.hubs.map((hub) => `  ${hub.name} (${hub.path}): ${hub.consumers} consumers`),
+            ].join("\n") + outside,
+        });
+    }
+    return evidenceFor(IMPACT_UNRESOLVED, startedAt, "passed", {
+        output: `the reach is resolved: ${reach.paths.length} files are reached without being touched` +
+            `${reach.paths.length === 0 ? "" : `, including ${reach.paths.slice(0, 5).join(", ")}`}` +
+            outside,
     });
 }
 async function execute(gate, input) {

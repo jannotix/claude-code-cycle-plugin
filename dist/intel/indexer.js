@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { graphSize, indexedFiles, insertEdges, nodesByName, nodesInFiles, replaceFile, } from "../store/graph.js";
@@ -16,7 +16,23 @@ const MODULE_KIND = "module";
 export async function indexProject(database, projectId, root, options = {}) {
     const projectRoot = resolve(root);
     const known = indexedFiles(database, projectId);
-    const present = await discover(projectRoot);
+    const listed = await discover(projectRoot);
+    if ("refused" in listed) {
+        const size = graphSize(database, projectId);
+        return {
+            edges: size.edges,
+            files: size.files,
+            nodes: size.nodes,
+            refused: listed.refused,
+            removed: 0,
+            skipped: 0,
+            spent: { edges: 0, parse: 0, scan: 0 },
+            unchanged: 0,
+            updated: 0,
+            yielded: false,
+        };
+    }
+    const present = listed.files;
     const changed = [];
     const digests = new Map();
     let unchanged = 0;
@@ -273,31 +289,19 @@ function resolveImport(fromPath, specifier, files) {
     return null;
 }
 async function discover(root) {
-    const tracked = await gitFiles(root);
-    const files = tracked ?? (await walk(root, root));
-    return new Set([...files].filter(isSupported));
-}
-async function gitFiles(root) {
     try {
         const { stdout } = await execFileAsync("git", gitArgs(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]), { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, shell: false, windowsHide: true });
-        return new Set(stdout.split("\0").filter(Boolean).map(normalize));
+        const listed = stdout.split("\0").filter(Boolean).map(normalize);
+        return { files: new Set(listed.filter(isSupported)) };
     }
-    catch {
-        return null;
+    catch (error) {
+        return { refused: reasonOf(error) };
     }
 }
-const IGNORED = new Set(["node_modules", "dist", "build", "out", "target", "vendor", ".venv"]);
-async function walk(root, directory, into = new Set()) {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-        if (entry.name.startsWith(".") || IGNORED.has(entry.name))
-            continue;
-        const full = join(directory, entry.name);
-        if (entry.isDirectory())
-            await walk(root, full, into);
-        else if (entry.isFile())
-            into.add(normalize(relative(root, full)));
-    }
-    return into;
+function reasonOf(error) {
+    const stderr = error?.stderr;
+    const text = typeof stderr === "string" && stderr.trim() !== "" ? stderr : String(error);
+    return (text.split("\n").find((line) => line.trim() !== "") ?? "git failed").trim().slice(0, 300);
 }
 async function statOf(path) {
     try {

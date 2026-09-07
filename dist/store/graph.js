@@ -104,3 +104,18 @@ function toNeighbour(row, direction) {
         node: toNode(row),
     };
 }
+export function indexedPaths(database, projectId, paths) {
+    if (paths.length === 0)
+        return [];
+    const placeholders = paths.map(() => "?").join(", ");
+    return database
+        .all(`select path from index_state where project_id = ? and path in (${placeholders})`, projectId, ...paths)
+        .map((row) => String(row["path"]));
+}
+export function incomingCounts(database, nodeIds) {
+    if (nodeIds.length === 0)
+        return new Map();
+    const placeholders = nodeIds.map(() => "?").join(", ");
+    const rows = database.all(`select to_id, count(*) as total from graph_edges where to_id in (${placeholders}) group by to_id`, ...nodeIds);
+    return new Map(rows.map((row) => [String(row["to_id"]), Number(row["total"])]));
+}

@@ -3,6 +3,74 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.23] - 2026-09-07
+
+### Added
+
+- The evidence policy now reads what a change *reaches*, not only what it touches. After the change
+  set is computed, `verify` asks the code graph what consumes it and matches the same layer rules
+  against the union. A line in a configuration loader imported by `src/auth/session.ts` requires the
+  security proof without anyone having edited anything under `auth`. This is promote-only by
+  construction — adding paths to the set can insert a gate and has no way to remove one — and it
+  lives in the evidence layer rather than the routing layer, so a run stays deterministic and cheap.
+- Reach carries a confidence, and an unresolved one is recorded rather than passed over.
+  `impact:unresolved` names the reason and the command that fixes it, warns under `standard` and
+  `advisory`, and refuses under `strict`. "Nothing is affected" and "I cannot tell what is affected"
+  are different claims, and reporting the first when the second is true is the failure this exists
+  to avoid.
+- A change reaching more of the project than a threshold reports `impact:high-fan-in`, naming the
+  hub symbols and their consumer counts instead of expanding into hundreds of gates. A shared logger
+  no longer turns every change into a maximal cycle, and the reviewers still learn it was touched.
+- `limits` answers `usage` and `prune`. Pruning releases the retained bytes of finished workflows'
+  candidates and keeps every row, digest, evidence entry and history link: what a candidate
+  contained stays provable after its bytes are gone. A running workflow keeps its bytes whatever
+  anyone asks, and `prune` reports what it would free unless it is confirmed.
+
+### Fixed
+
+- The index no longer falls back to walking the filesystem when git refuses to list the project.
+  Git's own list is the ignore policy and there was no second one to fall back to: the walk had its
+  own coarser rules, so an ignored `.env` or generated file could enter the graph and be read by
+  `impactOf` and the essentiality gate as if git had listed it. A refusal is now reported with its
+  reason, and — the part that matters more — the graph built earlier is left untouched, because
+  treating "git would not answer" as "the repository is empty" would delete all of it.
+- `CLAUDE_PLUGIN_OPTION_OPERATOR_EFFORT` was read by the build and declared by nothing, so the knob
+  existed in exactly one place: nowhere a user could reach. The operator makes one deterministic
+  call and has no effort to spend, so the read is gone and the name now reports as unknown like any
+  other option this build does not honour.
+- Every probe the doctor runs goes in one round instead of four in series. On Linux the package
+  managers are real executables rather than the shims Windows resolves without running, so this was
+  four four-second worst cases where it should have been one — the cost of `doctor`, multiplied by
+  every test that calls it.
+
+### Changed
+
+- `schema-check.mjs` asserts instead of printing. It used to exit zero whatever it found while
+  `certify.mjs` counted it as passed — the A1 problem, in a suite that could not fail. It now proves
+  the three immutability rules by trying to break them: a recorded history entry that cannot be
+  rewritten or deleted, an original request and a goal objective that cannot be edited while the
+  fields beside them still can.
+- Certification rows 1.3, 1.4 and 1.5 are automated. `tests-debug/marketplace.mjs` installs this
+  version from its own marketplace manifest into a throwaway configuration directory and checks the
+  version, the isolation, the persisted options and every component against the source tree. Those
+  three rows had been re-closed by hand after each of the four previous releases, because the matrix
+  binds an attestation to a version and nothing about them ever needed a person.
+- `tests-debug/full-cycle.mjs` drives certification row 13.6 with assertions. The row stays manual
+  because it spends real money, but the procedure — fixture, run, resume until it settles, then read
+  the store and the commit back — is written once instead of by hand each time.
+
+### Measurement
+
+- `tests-debug/reach-bench.mjs` measures the impact model against people, on repositories nobody
+  here wrote. It freezes the candidate consumers of a change before anyone looks, takes independent
+  labels of affected, not-affected or can't-tell, keeps disagreements rather than averaging them,
+  and reports four numbers in order: confidently wrong, the correlation between Cycle's unknowns and
+  the humans' can't-tells, per-candidate agreement, and the unknown share. It has a self-test,
+  because it produces the number someone will repeat.
+- Its first run on an external repository found a real property: the reach of a *deleted* file is
+  unknown by construction, because the graph it would be read from no longer holds it. Cycle says so
+  rather than reporting that nothing is affected.
+
 ## [1.0.22] - 2026-09-07
 
 ### Fixed

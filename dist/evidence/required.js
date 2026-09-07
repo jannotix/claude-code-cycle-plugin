@@ -54,8 +54,8 @@ const REQUIREMENTS = [
         supplied: /\b(zap|nuclei|semgrep|bandit|gosec|snyk|security)/iu,
     },
 ];
-export function requiredMissingGates(changed, discovered, strictness, alreadyRecorded = []) {
-    const paths = changed.map((file) => file.path);
+export function requiredMissingGates(changed, discovered, strictness, alreadyRecorded = [], reached = []) {
+    const paths = [...changed.map((file) => file.path), ...reached];
     const invocations = discovered.map((gate) => `${gate.name} ${gate.invocation}`);
     const recorded = new Set(alreadyRecorded);
     const gates = [];

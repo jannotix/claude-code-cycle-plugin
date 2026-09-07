@@ -28,6 +28,8 @@ const FALLBACK_MINIMUM_NODE = "22.13.0"
 const MEMORY_RESERVE_BYTES = 1024 ** 3
 const DISK_RESERVE_BYTES = 2 * 1024 ** 3
 const PROBE_TIMEOUT_MS = 4_000
+/** Probed in one round, in this order: the report lists them in the order it finds them. */
+const PACKAGE_MANAGERS = ["npm", "bun", "pnpm", "yarn"] as const
 
 export type Severity = "ok" | "warn" | "error"
 
@@ -372,7 +374,15 @@ async function probeRuntime(findings: Finding[]): Promise<DoctorReport["runtime"
     })
   }
 
-  const git = await probeVersion("git", ["--version"], PROBE_TIMEOUT_MS)
+  // Every probe spawns a process that knows nothing about the others, so they go together. In
+  // series this was the cost of `doctor` and, multiplied by every test that calls it, the cost of
+  // the suite: on Linux the package managers are real executables rather than the shims Windows
+  // resolves without running, so four four-second worst cases were four, not one.
+  const [git, ...managers] = await Promise.all([
+    probeVersion("git", ["--version"], PROBE_TIMEOUT_MS),
+    ...PACKAGE_MANAGERS.map((name) => probeVersion(name, ["--version"], PROBE_TIMEOUT_MS)),
+  ])
+
   if (git === null) {
     findings.push({
       code: "runtime.git",
@@ -382,9 +392,9 @@ async function probeRuntime(findings: Finding[]): Promise<DoctorReport["runtime"
   }
 
   const packageManagers: PackageManager[] = []
-  for (const name of ["npm", "bun", "pnpm", "yarn"]) {
-    const probe = await probeVersion(name, ["--version"], PROBE_TIMEOUT_MS)
-    if (probe !== null) {
+  for (const [at, name] of PACKAGE_MANAGERS.entries()) {
+    const probe = managers[at]
+    if (probe != null) {
       packageManagers.push({ kind: probe.resolved.kind, name, version: probe.version })
     }
   }

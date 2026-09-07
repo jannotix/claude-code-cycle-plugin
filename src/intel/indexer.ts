@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
-import { readFile, readdir, stat } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
 
@@ -51,6 +51,12 @@ export interface IndexReport {
   readonly spent: { readonly edges: number; readonly parse: number; readonly scan: number }
   /** True when indexing stopped early to leave the machine to something more urgent. */
   readonly yielded: boolean
+  /**
+   * Why git refused to list the project, when it did. Present means nothing was indexed and
+   * nothing already indexed was touched: the graph a caller reads is the one from before, not a
+   * graph built some other way.
+   */
+  readonly refused?: string
 }
 
 export interface IndexOptions {
@@ -76,7 +82,26 @@ export async function indexProject(
 ): Promise<IndexReport> {
   const projectRoot = resolve(root)
   const known = indexedFiles(database, projectId)
-  const present = await discover(projectRoot)
+  const listed = await discover(projectRoot)
+
+  // A refusal is not an empty repository. Treating it as one would delete every indexed file below
+  // — the graph destroyed by a transient git, which is the failure this returns early to avoid.
+  if ("refused" in listed) {
+    const size = graphSize(database, projectId)
+    return {
+      edges: size.edges,
+      files: size.files,
+      nodes: size.nodes,
+      refused: listed.refused,
+      removed: 0,
+      skipped: 0,
+      spent: { edges: 0, parse: 0, scan: 0 },
+      unchanged: 0,
+      updated: 0,
+      yielded: false,
+    }
+  }
+  const present = listed.files
 
   const changed: string[] = []
   const digests = new Map<string, string>()
@@ -417,38 +442,35 @@ function resolveImport(
   return null
 }
 
-async function discover(root: string): Promise<Set<string>> {
-  const tracked = await gitFiles(root)
-  const files = tracked ?? (await walk(root, root))
-  return new Set([...files].filter(isSupported))
-}
-
-/** Git's own index is the ignore policy: no second implementation of .gitignore semantics. */
-async function gitFiles(root: string): Promise<Set<string> | null> {
+/**
+ * Git's own index is the ignore policy: no second implementation of .gitignore semantics. When git
+ * refuses there is no second policy to fall back to either, so the pass stops and says why.
+ * `changes.ts` and `proof.ts` already fail closed on the same refusal, for the lesson of 1.0.9: a
+ * transient git read as an empty set let an out-of-scope task through. An index is worse, not
+ * better, because nothing downstream can tell a walked graph from a tracked one — a walk would put
+ * an ignored `.env` or generated code into the graph that `impactOf` and the essentiality gate then
+ * read as git's own view.
+ */
+async function discover(root: string): Promise<{ files: Set<string> } | { refused: string }> {
   try {
     const { stdout } = await execFileAsync(
       "git",
       gitArgs(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]),
       { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, shell: false, windowsHide: true },
     )
-    return new Set(stdout.split("\0").filter(Boolean).map(normalize))
-  } catch {
-    return null
+    const listed = stdout.split("\0").filter(Boolean).map(normalize)
+    return { files: new Set(listed.filter(isSupported)) }
+  } catch (error) {
+    return { refused: reasonOf(error) }
   }
 }
 
-const IGNORED = new Set(["node_modules", "dist", "build", "out", "target", "vendor", ".venv"])
-
-async function walk(root: string, directory: string, into = new Set<string>()): Promise<Set<string>> {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") || IGNORED.has(entry.name)) continue
-    const full = join(directory, entry.name)
-    if (entry.isDirectory()) await walk(root, full, into)
-    else if (entry.isFile()) into.add(normalize(relative(root, full)))
-  }
-  return into
+/** The first line of git's own complaint, which names the cause a user can act on. */
+function reasonOf(error: unknown): string {
+  const stderr = (error as { stderr?: unknown })?.stderr
+  const text = typeof stderr === "string" && stderr.trim() !== "" ? stderr : String(error)
+  return (text.split("\n").find((line) => line.trim() !== "") ?? "git failed").trim().slice(0, 300)
 }
-
 async function statOf(path: string): Promise<{ modifiedAt: number; size: number } | null> {
   try {
     const info = await stat(path)

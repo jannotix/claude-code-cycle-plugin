@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { mkdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -13,8 +14,14 @@ import { graphSize, indexedFiles, neighbours, nodesByName } from "../src/store/g
 
 const PROJECT = "p1"
 
+/**
+ * A fixture is a git repository because the indexer only indexes one: git's own list is the ignore
+ * policy, and a directory git will not answer for is refused rather than walked. Untracked files
+ * count, so nothing here needs committing.
+ */
 async function fixture(files: Record<string, string>): Promise<string> {
   const root = mkdtempSync(join(tmpdir(), "cycle-intel-"))
+  execFileSync("git", ["init", "--quiet"], { cwd: root, stdio: "ignore" })
   for (const [path, content] of Object.entries(files)) {
     const full = join(root, path)
     await mkdir(dirname(full), { recursive: true })
@@ -373,6 +380,40 @@ test("a file whose size or mtime moved is read, and the digest still decides", a
     await writeFile(join(root, "src", "a.ts"), "export function alpha() { return 2 }", "utf8")
     const edited = await index(database, root)
     assert.equal(edited.updated, 1)
+  } finally {
+    database.close()
+    rmSync(root, { force: true, recursive: true })
+  }
+})
+
+// Certification 8.8.
+/**
+ * The C6 property. Until 1.0.22 a git that refused sent the pass to a filesystem walk with its own
+ * coarser ignore rules, so an ignored `.env` or generated file could enter the graph and be read by
+ * `impactOf` and the essentiality gate as if git had listed it. There is no second ignore policy:
+ * a refusal is reported, and — the part that matters most — an index built earlier is left alone,
+ * because treating "git would not answer" as "the repository is empty" would delete all of it.
+ */
+test("a directory git will not list is refused, and the graph already built survives it", async () => {
+  const root = await fixture({ "src/a.ts": `export function alpha() { return 1 }` })
+  const database = new Database({ path: ":memory:" })
+  try {
+    const first = await index(database, root)
+    assert.equal(first.refused, undefined)
+    assert.equal(first.files, 1)
+
+    // Removing .git is what a repository git refuses to answer for looks like from here.
+    rmSync(join(root, ".git"), { force: true, recursive: true })
+    await writeFile(join(root, "src/ignored.ts"), `export function gamma() { return 3 }`, "utf8")
+    const second = await index(database, root)
+
+    assert.ok(second.refused !== undefined, "the refusal is reported")
+    assert.match(second.refused ?? "", /git|repository/iu)
+    assert.equal(second.removed, 0)
+    assert.equal(second.updated, 0)
+    assert.deepEqual([...indexedFiles(database, PROJECT).keys()], ["src/a.ts"])
+    assert.equal(nodesByName(database, PROJECT, "alpha").length, 1)
+    assert.equal(nodesByName(database, PROJECT, "gamma").length, 0)
   } finally {
     database.close()
     rmSync(root, { force: true, recursive: true })

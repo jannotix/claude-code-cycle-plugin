@@ -36,6 +36,7 @@ import { BOUNDARIES, CONSULTATION, resolveConsultation } from "./roles.ts"
 import { Runtime } from "./runtime.ts"
 import { graphSize } from "./store/graph.ts"
 import { appendHistory } from "./store/history.ts"
+import { pruneCandidateBytes, storeUsage } from "./store/retention.ts"
 import {
   arbitrate,
   candidateEvidence,
@@ -536,11 +537,18 @@ const limitsTool: ToolDefinition = {
     "Admission and resource governance. `status` reports the reserves, what the machine has right " +
     "now, the active leases and this project's share of them. `admit` requests a slot for a " +
     "workflow and is deferred with a reason rather than blocked; `renew` extends a held lease; " +
-    "`release` gives the slot back. A lease that is not renewed expires on its own.",
+    "`release` gives the slot back. A lease that is not renewed expires on its own. `usage` " +
+    "reports what the store holds and how much of it can be given back; `prune` gives it back, " +
+    "dropping the retained bytes of finished workflows' candidates and keeping every record and " +
+    "digest, and it reports what it would free unless `confirm` is true.",
   inputSchema: {
     additionalProperties: false,
     properties: {
-      operation: { enum: ["status", "admit", "renew", "release"], type: "string" },
+      confirm: { type: "boolean" },
+      operation: {
+        enum: ["status", "admit", "renew", "release", "usage", "prune"],
+        type: "string",
+      },
       workflowId: { maxLength: 64, type: "string" },
     },
     required: ["operation"],
@@ -582,6 +590,16 @@ const limitsTool: ToolDefinition = {
       case "release": {
         release(database, identifier())
         return { released: true }
+      }
+      case "usage":
+        return storeUsage(database, cycle.project.id)
+      case "prune": {
+        // Asked for twice on purpose. Nothing here is recoverable and nothing here is urgent, so a
+        // caller that meant `usage` and typed `prune` gets the report it wanted instead.
+        if (args["confirm"] !== true) {
+          return { confirm: false, wouldFree: storeUsage(database, cycle.project.id).prunable }
+        }
+        return { confirm: true, freed: pruneCandidateBytes(database, cycle.project.id) }
       }
       default:
         throw new Error("unknown limits operation")

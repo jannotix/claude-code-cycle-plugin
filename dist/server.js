@@ -19,6 +19,7 @@ import { BOUNDARIES, CONSULTATION, resolveConsultation } from "./roles.js";
 import { Runtime } from "./runtime.js";
 import { graphSize } from "./store/graph.js";
 import { appendHistory } from "./store/history.js";
+import { pruneCandidateBytes, storeUsage } from "./store/retention.js";
 import { arbitrate, candidateEvidence, exportState, control, deliverCandidate, historyState, mandatoryGatesPassed, recallForRequest, reconcile, declareScope, freezeCandidate, reportTask, startWorkflow, submitPlan, submitBrowserEvidence, submitReviewVerdict, submitSecurityProof, verificationInputs, verifyCandidate, workflowStatus, } from "./workflow/service.js";
 const VERSION = manifestVersion();
 function manifestVersion() {
@@ -407,11 +408,18 @@ const limitsTool = {
     description: "Admission and resource governance. `status` reports the reserves, what the machine has right " +
         "now, the active leases and this project's share of them. `admit` requests a slot for a " +
         "workflow and is deferred with a reason rather than blocked; `renew` extends a held lease; " +
-        "`release` gives the slot back. A lease that is not renewed expires on its own.",
+        "`release` gives the slot back. A lease that is not renewed expires on its own. `usage` " +
+        "reports what the store holds and how much of it can be given back; `prune` gives it back, " +
+        "dropping the retained bytes of finished workflows' candidates and keeping every record and " +
+        "digest, and it reports what it would free unless `confirm` is true.",
     inputSchema: {
         additionalProperties: false,
         properties: {
-            operation: { enum: ["status", "admit", "renew", "release"], type: "string" },
+            confirm: { type: "boolean" },
+            operation: {
+                enum: ["status", "admit", "renew", "release", "usage", "prune"],
+                type: "string",
+            },
             workflowId: { maxLength: 64, type: "string" },
         },
         required: ["operation"],
@@ -444,6 +452,14 @@ const limitsTool = {
             case "release": {
                 release(database, identifier());
                 return { released: true };
+            }
+            case "usage":
+                return storeUsage(database, cycle.project.id);
+            case "prune": {
+                if (args["confirm"] !== true) {
+                    return { confirm: false, wouldFree: storeUsage(database, cycle.project.id).prunable };
+                }
+                return { confirm: true, freed: pruneCandidateBytes(database, cycle.project.id) };
             }
             default:
                 throw new Error("unknown limits operation");

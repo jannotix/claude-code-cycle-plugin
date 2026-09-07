@@ -117,6 +117,13 @@ test("every declared option is wired to the server and read by it", async () => 
   // The other direction: a variable the server is handed but does not read changes nothing.
   assert.deepEqual(readConfiguration(environment).unknown, [])
   assert.equal(readConfiguration(environment).delivered, Object.keys(manifest.userConfig).length)
+
+  // And the third direction, which is how OPERATOR_EFFORT survived four releases: the code read a
+  // name the manifest never offered, so the knob existed in exactly one place — nowhere a user
+  // could reach. A name we honour must be declared; one we do not must report as unknown.
+  const undeclared = { CLAUDE_PLUGIN_OPTION_OPERATOR_EFFORT: "max" }
+  assert.deepEqual(readConfiguration(undeclared).unknown, ["OPERATOR_EFFORT"])
+  assert.equal(readConfiguration(undeclared).roles.operator.effort, "low")
 })
 
 // A proof executes code the reviewer wrote, with this account's privileges and no operating-system

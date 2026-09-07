@@ -108,3 +108,35 @@ test("advisory records the missing proof without blocking on it", () => {
   assert.equal(gates.length, 2)
   assert.ok(gates.every((gate) => !gate.mandatory))
 })
+
+// Certification 5.22.
+/**
+ * D1. The rules are matched against what the change reaches as well as what it touches. A change to
+ * a configuration loader that nothing under `auth` mentions still requires the security proof, once
+ * the graph says a session module imports it — which is the whole point of reading the reach at the
+ * evidence layer rather than at the routing layer.
+ */
+test("a file the change reaches, but does not touch, inserts the gate its layer requires", () => {
+  const touchedOnly = requiredMissingGates(changed("src/config/loader.ts"), [], "standard")
+  assert.deepEqual(touchedOnly.map((gate) => gate.name), [])
+
+  const withReach = requiredMissingGates(changed("src/config/loader.ts"), [], "standard", [], [
+    "src/auth/session.ts",
+  ])
+
+  assert.deepEqual(withReach.map((gate) => gate.name), ["security:executed-proof"])
+  assert.ok(withReach[0]?.precondition.includes("src/auth/session.ts"))
+})
+
+/** Promote-only by construction: reach can add a gate, and has no way to remove one. */
+test("reached paths never remove a gate the touched paths required", () => {
+  const touched = requiredMissingGates(changed("src/auth/session.ts"), [], "standard")
+  const reaching = requiredMissingGates(changed("src/auth/session.ts"), [], "standard", [], [
+    "docs/README.md",
+    "src/unrelated.ts",
+  ])
+
+  assert.ok(touched.length > 0)
+  for (const gate of touched) assert.ok(reaching.some((other) => other.name === gate.name))
+  assert.ok(reaching.length >= touched.length)
+})

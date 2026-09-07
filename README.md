@@ -158,7 +158,7 @@ control and recovery.
 | `/cycle:history` | Read the append-only record, or verify its chain and signatures |
 | `/cycle:memory` | What this project learned from delivered work, and what it stopped believing |
 | `/cycle:goal` | A persistent objective across several cycles, with a completion gate |
-| `/cycle:limits` | What Cycle may take from this machine, and why something is waiting |
+| `/cycle:limits` | What Cycle may take from this machine, why something is waiting, and what the store holds |
 | `/cycle:models` | What each role actually runs on, which provider carries it, and what pays |
 | `/cycle:permissions` | The immutable boundaries between the roles |
 | `/cycle:status` | Where the run is, and why it is standing still if it is |

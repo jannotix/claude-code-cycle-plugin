@@ -91,8 +91,14 @@ export function requiredMissingGates(
   strictness: GateStrictness,
   /** Gates already recorded against this candidate, such as a submitted browser attestation. */
   alreadyRecorded: readonly string[] = [],
+  /**
+   * D1. Files the change reaches without touching. They are matched by the same rules, so a change
+   * that reaches the security surface requires its proof even when nothing under it was edited.
+   * Adding to this set can only insert gates, never remove one.
+   */
+  reached: readonly string[] = [],
 ): Gate[] {
-  const paths = changed.map((file) => file.path)
+  const paths = [...changed.map((file) => file.path), ...reached]
   const invocations = discovered.map((gate) => `${gate.name} ${gate.invocation}`)
   const recorded = new Set(alreadyRecorded)
   const gates: Gate[] = []

@@ -29,7 +29,7 @@ export interface VerdictContext {
   /** Evidence of proofs that actually demonstrated something. Empty unless a proof was run. */
   readonly proofIds?: readonly string[]
   readonly requirementIds: readonly string[]
-  /** True for the security reviewer: section 7.7 forbids an unproven vulnerability claim. */
+  /** True for the security reviewer: section 7.8 forbids an unproven vulnerability claim. */
   readonly requiresProof?: boolean
   readonly role: string
 }
@@ -125,7 +125,7 @@ function parseFinding(raw: unknown, context: VerdictContext): Finding {
   const evidenceIds = citedEvidence(entry["evidence_ids"], context)
   const summary = text(entry["summary"], "finding summary", MAX_SUMMARY, context.role)
 
-  // Section 7.7. Static suspicion is reported, not suppressed: the claim survives at info severity
+  // Section 7.8. Static suspicion is reported, not suppressed: the claim survives at info severity
   // with its label, so a reader sees both the concern and the fact that nobody demonstrated it.
   // Downgraded rather than rejected, because rejecting the verdict would lose the observation.
   if (unproven(severity as Severity, evidenceIds, context)) {

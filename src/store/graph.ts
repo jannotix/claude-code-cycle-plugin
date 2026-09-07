@@ -227,3 +227,34 @@ function toNeighbour(row: Row, direction: Neighbour["direction"]): Neighbour {
     node: toNode(row),
   }
 }
+
+/** Which of these paths the index actually holds. Asked of a handful of paths, not of the corpus. */
+export function indexedPaths(
+  database: Database,
+  projectId: string,
+  paths: readonly string[],
+): string[] {
+  if (paths.length === 0) return []
+  const placeholders = paths.map(() => "?").join(", ")
+  return database
+    .all<Row>(
+      `select path from index_state where project_id = ? and path in (${placeholders})`,
+      projectId,
+      ...paths,
+    )
+    .map((row) => String(row["path"]))
+}
+
+/** How many edges arrive at each of these nodes: a symbol's consumer count. */
+export function incomingCounts(
+  database: Database,
+  nodeIds: readonly string[],
+): Map<string, number> {
+  if (nodeIds.length === 0) return new Map()
+  const placeholders = nodeIds.map(() => "?").join(", ")
+  const rows = database.all<Row>(
+    `select to_id, count(*) as total from graph_edges where to_id in (${placeholders}) group by to_id`,
+    ...nodeIds,
+  )
+  return new Map(rows.map((row) => [String(row["to_id"]), Number(row["total"])]))
+}

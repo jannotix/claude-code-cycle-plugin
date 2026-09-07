@@ -4,7 +4,7 @@
  * one people learn to ignore, so each rule is narrow and each one names a defect that is wrong
  * regardless of the project's taste.
  *
- * Families of section 7.6, and the rules that cover them:
+ * Families of section 7.7, and the rules that cover them:
  * contrast and colour — contrast · typography — font-size · spacing and layout — viewport-width ·
  * focus and keyboard reachability — focus-not-visible, positive-tabindex, interactive-without-key,
  * image-without-alt · motion and easing — reduced-motion · responsive breakpoints — fixed-width ·

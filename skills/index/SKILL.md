@@ -23,6 +23,8 @@ Indexing is incremental by content digest. `unchanged` files were not reparsed �
 repository that is the whole point, and a second run reporting `updated: 0` is correct, not a
 failure.
 
+`refused`, when present, means nothing was indexed at all — see below.
+
 `skipped` counts files in a language with no bundled grammar, or larger than the parse limit. They
 are still tracked by digest, so they are not invisible; they just contribute no symbols.
 
@@ -37,3 +39,14 @@ Say which one you are relying on when it matters. An `inferred` edge is a lead, 
 ## Boundaries
 
 Read-only. This never modifies the project, and it makes no model calls — parsing runs locally.
+
+## When indexing is refused
+
+`refused` in the report means git would not list the project, and nothing was indexed: git's own
+list is the ignore policy, and there is no second one to fall back on. The graph you can query is
+the one from before — it was left untouched rather than emptied, because a refusal is not an empty
+repository.
+
+Report the reason verbatim and stop. It is a repository problem, not an index problem, and the
+usual causes are a directory that is not a repository, a `safe.directory` that excludes it, or a
+git that is not on PATH. Fix it and run the same call again.

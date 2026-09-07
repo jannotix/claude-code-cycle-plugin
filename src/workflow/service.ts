@@ -934,7 +934,7 @@ export function submitBrowserEvidence(
 
 /**
  * Runs one security proof against a disposable copy of the candidate and records the result. The
- * security reviewer calls this before it may raise a critical or high finding; see section 7.7.
+ * security reviewer calls this before it may raise a critical or high finding; see section 7.8.
  */
 export async function submitSecurityProof(
   context: ServiceContext,
@@ -1134,7 +1134,7 @@ function verdictContext(context: ServiceContext, workflowId: string, role: strin
     "select e.id from evidence e join workflows w on w.candidate_id = e.candidate_id where w.id = ?",
     workflowId,
   )
-  // Section 7.7: the security reviewer may not report a vulnerability class as present without an
+  // Section 7.8: the security reviewer may not report a vulnerability class as present without an
   // executed proof. Only a demonstrated proof — a failing proof gate — counts.
   const proofIds = loadEvidence(context.database, workflow.candidateId ?? "")
     .filter((item) => item.gateName.startsWith("security:proof:") && item.status === "failed")

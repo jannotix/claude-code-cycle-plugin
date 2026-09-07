@@ -25,6 +25,7 @@ export type GateExecutor =
   | { readonly kind: "candidate-integrity" }
   | { readonly kind: "design" }
   | { readonly kind: "essentiality" }
+  | { readonly kind: "impact" }
   | { readonly kind: "secret-scan" }
   | { readonly kind: "unavailable"; readonly reason: string }
 
