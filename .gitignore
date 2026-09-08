@@ -24,3 +24,9 @@ build/
 Thumbs.db
 .idea/
 .vscode/
+
+# Internal only: the readiness plan, the certification matrix and its recorded results, and the
+# benches that drive the manual rows. They stay on the maintainer machines rather than in the
+# published repository, which carries the plugin and its own test suite.
+documentation/
+tests-debug/
