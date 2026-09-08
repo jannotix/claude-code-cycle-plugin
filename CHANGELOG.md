@@ -3,6 +3,29 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.24] - 2026-09-08
+
+### Fixed
+
+- Under an explicit `--allowedTools` list that omits the `Workflow` tool, `/cycle:run` could not
+  start a workflow and did not say so. The model did the work by hand instead: files changed, the
+  answer said it was done, and the store held no frozen candidate, no gate, no review and no record.
+  A tree that looks delivered with nothing behind it is the exact false "done" this plugin exists to
+  refuse, and it was arriving through a permission list rather than through a defect.
+
+  The `run` skill now stops when it cannot start the workflow, names which of the two causes it is —
+  a missing `Workflow` tool or dynamic workflows switched off — and says what would fix it, instead
+  of falling back to doing the work. A silent fallback here is the same shape as the one removed
+  from the indexer in 1.0.23, one level up.
+
+  The README says it too, under Requirements: a session running under an explicit allowlist needs
+  `Workflow` and `Skill` in it. This is easiest to miss exactly where it matters most — automation,
+  and `root`, where the CLI refuses a permissive mode and an explicit list is the only option.
+
+  Found while certifying row 13.6 on WSL, where it took three runs and a separate probe to establish
+  that the control plane was working perfectly and a permission was missing. Then found twice more
+  in this session's own scripts, which is how much it wants to be documented.
+
 ## [1.0.23] - 2026-09-07
 
 ### Added

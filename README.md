@@ -241,6 +241,17 @@ Everything it recorded survives, so `/cycle:resume` in a later session reconcile
 and continues from the persisted stage — including finishing a delivery that was approved and never
 started, which is how a run that lost its last call ordinarily ends.
 
+**If you run under an explicit `--allowedTools` list**, put `Workflow` and `Skill` in it. `/cycle:run`
+starts a workflow, so without the `Workflow` tool it cannot start one — and this does not fail. The
+model does the work by hand instead: files change, the answer says it is done, and there is no
+frozen candidate, no gate, no review and no record. A tree that looks delivered and a store that
+holds nothing is the exact false "done" this plugin exists to refuse, so it is worth checking the
+list before the run rather than the store afterwards.
+
+A permissive mode grants these already. An explicit list is the prudent choice for automation, and
+it is also where this is easy to miss — including under `root`, where the CLI refuses
+`--permission-mode bypassPermissions` and an explicit list is the only option.
+
 ## License
 
 Copyright 2026 Gianluca Iannotta.

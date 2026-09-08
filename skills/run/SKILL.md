@@ -26,6 +26,21 @@ asked for the full one, otherwise `"auto"` and let the routing decide.
 3. Report the returned state once, and stop. The run continues in the background; do not poll it.
    `/cycle:status` reports progress when the user asks.
 
+## If you cannot start the workflow
+
+Say so and stop. Do not implement the request yourself.
+
+If the workflow tool is unavailable — a session under an explicit `--allowedTools` list that omits
+`Workflow`, or dynamic workflows switched off — then there is no governed cycle to run, and doing
+the work by hand produces exactly what this plugin exists to refuse: changed files, an answer that
+says it is done, and no frozen candidate, no gate, no independent review and no record. It looks
+delivered and nothing was proved.
+
+Tell the user which of the two it is, in one line, and what would fix it: add `Workflow` and `Skill`
+to the allowed tools, or enable dynamic workflows. Then stop. Offer `/cycle:executor` if they want
+an assessment in the meantime — that role is advisory by design and implements nothing, so it is
+honest about what it is.
+
 ## What the states mean
 
 | State | What happened |
