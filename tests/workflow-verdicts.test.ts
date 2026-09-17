@@ -33,6 +33,7 @@ test("a well-formed verdict parses", () => {
  * is the one thing this plugin exists to refuse, and it was arriving through the strictest function
  * in the file.
  */
+// Certification 6.17.
 test("a requirement called satisfied while citing nothing is refused", () => {
   assert.throws(
     () =>

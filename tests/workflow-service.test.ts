@@ -386,6 +386,7 @@ test("arbitration in full mode requires both reviews", () => {
  * a line and cannot tell who wrote it, so one client could send both verdicts naming a different
  * role each time and the record would show two independent reviews that were never independent.
  */
+// Certification 6.13.
 test("a review cannot be submitted without the capability issued at the freeze", () => {
   const { close, ctx } = context()
   try {
@@ -410,6 +411,7 @@ test("a review cannot be submitted without the capability issued at the freeze",
   }
 })
 
+// Certification 6.14.
 test("one capability cannot be spent twice, so one holder cannot cast both reviews", () => {
   const { close, ctx } = context()
   try {
@@ -438,6 +440,7 @@ test("one capability cannot be spent twice, so one holder cannot cast both revie
  * the first: a rejection could be overwritten with an approval by whoever sent the next line, and
  * the record would show only the approval. A review is a judgement about frozen bytes, not a draft.
  */
+// Certification 6.15.
 test("a recorded review cannot be overwritten by a later one for the same role", () => {
   const { close, ctx } = context()
   try {
@@ -473,6 +476,7 @@ test("a recorded review cannot be overwritten by a later one for the same role",
 })
 
 /** Two rows were enough to open arbitration. Two rows are not two reviewers. */
+// Certification 6.16.
 test("arbitration opens on two distinct roles, not on two rows", () => {
   const { close, ctx } = context()
   try {

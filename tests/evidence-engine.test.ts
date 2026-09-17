@@ -186,6 +186,7 @@ test("a clean candidate with no required layer passes", async () => {
 })
 
 // The rejection cases are the product: a layer touched with no proof of it is a failure.
+// Certification 5.25.
 test("a UI change with no browser gate is refused", async () => {
   const item = fixture()
   try {
@@ -411,6 +412,7 @@ test("a captured browser flow satisfies the interface layer", async () => {
  * reviewer's submission replaced those rows or merely sat beside them. It has to be a flip, not an
  * addition, or the candidate stays refused with its proof in the table.
  */
+// Certification 5.26.
 test("a first pass names the missing interface layer and a second one sees it proved", async () => {
   const item = fixture()
   try {

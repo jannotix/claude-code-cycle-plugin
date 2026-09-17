@@ -92,6 +92,7 @@ test("malformed input does not terminate the server", async () => {
  * The test that existed covered only text that is not JSON at all, so the whole class sat behind a
  * green assertion.
  */
+// Certification 5.27.
 test("valid JSON that is not a request is refused, and the session survives it", async () => {
   for (const frame of ["null", "42", '"text"', "[]", "true"]) {
     const responses = await exchange([frame, { id: 9, jsonrpc: "2.0", method: "ping" }])
