@@ -108,11 +108,21 @@ function parseRequirement(raw: unknown, context: VerdictContext): RequirementVer
     )
   }
 
-  return {
-    evidenceIds: citedEvidence(entry["evidence_ids"], context),
-    requirementId,
-    status,
+  const evidenceIds = citedEvidence(entry["evidence_ids"], context)
+
+  // A requirement called satisfied while citing nothing is an unverified claim of completion, which
+  // is the single thing this plugin exists to refuse. It was accepted: the identifiers were checked
+  // against what the plane recorded, but an empty list has nothing to check, so the strictest path
+  // through this function was also the emptiest one. Unsatisfied may cite nothing — not finding
+  // evidence is the ordinary reason a requirement fails — and the quick route carries no requirement
+  // matrix at all, so neither is affected.
+  if (status === "satisfied" && evidenceIds.length === 0) {
+    throw new VerdictRejected(
+      `${context.role} called requirement ${requirementId} satisfied while citing no evidence`,
+    )
   }
+
+  return { evidenceIds, requirementId, status }
 }
 
 function parseFinding(raw: unknown, context: VerdictContext): Finding {

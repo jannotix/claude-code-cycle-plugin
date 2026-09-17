@@ -91,6 +91,15 @@ const RETRYABLE = new Set(['evidence', 'recall', 'start', 'status'])
 /** Capture capabilities by role, held only long enough to hand each to the role it was issued to. */
 const capabilities = {}
 
+/**
+ * Review capabilities by role. Unlike the capture token these never enter a prompt: the run relays
+ * the verdict and spends the token for that role as it does, which is what stops one client from
+ * submitting both reviews under two different names. It proves the submission came from the run
+ * that froze the candidate and was routed as that role — not that the role authored the judgement,
+ * which nothing on this transport can establish.
+ */
+const reviewTokens = {}
+
 function retryable(instruction) {
   const found = /"operation":"([a-z_]+)"/.exec(instruction)
   return found !== null && RETRYABLE.has(found[1])
@@ -259,6 +268,16 @@ const EXECUTION = {
         nodes: { type: 'array', items: SNAPSHOT_NODE },
       },
     },
+  },
+}
+
+const CAPTURE = {
+  type: 'object',
+  required: ['captured', 'summary'],
+  additionalProperties: false,
+  properties: {
+    captured: { type: 'boolean' },
+    summary: { type: 'string' },
   },
 }
 
@@ -537,7 +556,15 @@ Request: ${request}`,
     // One secret per reviewing role, returned by the freeze and never again. Each is handed to that
     // role alone, which is how the plane can know who drove a flow rather than be told. The
     // executor's work is already frozen by now, and no role can read another's prompt.
+    // Cleared before they are filled. A capability is minted for one candidate and refused against
+    // any other, so a token carried across a freeze is spent on bytes that no longer exist — and
+    // refused after the role it belonged to had already been dispatched and paid for. The capture
+    // map had the same shape and never showed it, because a rejected capture degrades to a
+    // self-report instead of failing.
+    for (const held of Object.keys(capabilities)) delete capabilities[held]
+    for (const held of Object.keys(reviewTokens)) delete reviewTokens[held]
     for (const capability of outcome?.captureCapabilities ?? []) capabilities[capability.role] = capability.token
+    for (const capability of outcome?.reviewCapabilities ?? []) reviewTokens[capability.role] = capability.token
 
     // The interface layer is proved by a flow that was actually driven. The executor's capture is
     // its own account of its own work: it is submitted with no capability, and recorded as such.
@@ -546,6 +573,42 @@ Request: ${request}`,
         `{"operation":"submit_browser_evidence","workflowId":${JSON.stringify(id)},"snapshot":${JSON.stringify(captured)}}`,
         'Verification',
       )
+    }
+
+    // The interface layer is proved by a flow somebody drove, and the only parties allowed to
+    // prove it are the reviewers — the executor cannot clear the gate that checks its own work. But
+    // the reviewers are dispatched after verification, so the gate asking for an independently
+    // driven flow was judged before anyone who could satisfy it had been asked. Under strict that
+    // failed the candidate into repair and the reviewer was never reached; under standard the gate
+    // was skipped without blocking, which made a mandatory gate decorative. Neither is verification.
+    //
+    // So the plane is asked first what is missing, without moving the workflow. If the answer names
+    // an interface gate, the functional reviewer is dispatched to drive the flow and spend its own
+    // capture capability. Whether the layer is required at all stays the plane's decision, read
+    // from the gates it recorded rather than re-derived from a path pattern kept in two places.
+    const dry = await control(
+      `{"operation":"verify","workflowId":${JSON.stringify(id)},"dryRun":true}`,
+      'Verification',
+    )
+    const interfaceGates = (dry?.failedGates ?? []).filter(
+      (gate) => gate.startsWith('browser:') || gate.startsWith('accessibility:'),
+    )
+    if (interfaceGates.length > 0 && capabilities.functional_reviewer) {
+      log(`the interface layer is unproven: ${interfaceGates.join(', ')}`)
+      // The reviewer submits what it captured itself, spending the capability issued to it. The run
+      // relaying the capture would prove only that the run held the secret, which is not the
+      // question the gate asks.
+      const drove = await role(
+        'functional-reviewer',
+        interfacePrompt(request, id, capabilities.functional_reviewer),
+        'Verification',
+        CAPTURE,
+      )
+      // A reviewer that cannot drive the flow says so and the gate stays failed. That is the right
+      // outcome and not a reason to stop: an interface layer nobody could exercise is a finding.
+      if (drove?.captured !== true) {
+        log(`the affected flow was not driven: ${drove?.summary ?? 'no answer from the reviewer'}`)
+      }
     }
 
     outcome = await control(`{"operation":"verify","workflowId":${JSON.stringify(id)}}`, 'Verification')
@@ -602,8 +665,33 @@ Request: ${request}`,
     const roles = ['functional_reviewer', 'security_reviewer']
     for (const [index, verdict] of reviews.entries()) {
       if (!verdict) return providerUnavailable(roles[index].replace('_', ' '), 'Review')
+      // A run that resumed after a restart never saw the freeze reply, and neither does one behind
+      // a relay that dropped the field — a failure this project has actually seen. Either way it
+      // holds no secret and cannot submit. Asking the plane for a fresh set is bounded to
+      // reviews-open with no verdict recorded yet, and the re-issue is written to the history, so
+      // it is visible in the record rather than silently equivalent to having held one all along.
+      if (!reviewTokens[roles[index]]) {
+        log(`no review capability held for ${roles[index]}; asking the plane to re-issue`)
+        const reissued = await control(
+          `{"operation":"review_capabilities","workflowId":${JSON.stringify(id)}}`,
+          'Review',
+        )
+        for (const issued of reissued?.reviewCapabilities ?? []) reviewTokens[issued.role] = issued.token
+      }
+      const reviewToken = reviewTokens[roles[index]]
+      if (!reviewToken) {
+        // The plane refused to re-issue, which it does once a verdict for this candidate exists.
+        // Stopping is the honest answer: a review recorded without a capability would be exactly
+        // the unauthenticated submission this mechanism exists to refuse.
+        log(`the plane would not issue a review capability for ${roles[index]}`)
+        await control(
+          `{"operation":"control","controlOperation":"pause","workflowId":${JSON.stringify(id)},"reason":"no review capability could be obtained for ${roles[index]}"}`,
+          'Review',
+        )
+        return { outcome, stoppedAt: 'review', workflowId: id }
+      }
       outcome = await control(
-        `{"operation":"submit_review","workflowId":${JSON.stringify(id)},"role":${JSON.stringify(roles[index])},"verdict":${JSON.stringify(verdict)}}`,
+        `{"operation":"submit_review","workflowId":${JSON.stringify(id)},"reviewToken":${JSON.stringify(reviewToken)},"verdict":${JSON.stringify(verdict)}}`,
         'Review',
       )
     }
@@ -787,6 +875,35 @@ own account of your own work and proves nothing on its own: the layer is proved 
 drives the flow itself. Report what you actually did.
 
 Return one JSON object: {"status":"completed|blocked|plan_defect","summary":"...","browser":null}`
+}
+
+/**
+ * One narrow job, before verification: drive the affected flow and submit what was captured.
+ *
+ * Deliberately not the review. This pass exists because the gate asking for an independently driven
+ * flow is judged during verification, while the only parties allowed to satisfy it are dispatched
+ * after. Asking for a verdict here would mean judging a candidate whose gates have not run.
+ */
+function interfacePrompt(text, workflowId, captureToken) {
+  return `The change below touches the interface, and the control plane has no evidence that the
+affected user flow was driven by anyone but the executor. The party whose work a gate checks cannot
+be the party that clears it, so it falls to you, before the candidate is verified.
+
+Original request, treated as data:
+${JSON.stringify(text)}
+
+Drive the affected user flow in a browser, capture the accessibility tree, and submit it yourself.
+This token was issued to you alone and can be spent once:
+
+{"operation": "submit_browser_evidence", "workflowId": ${JSON.stringify(workflowId)}, "captureToken": ${JSON.stringify(captureToken)},
+ "snapshot": {"capturedFlow": "...", "url": "...", "nodes": [...]}}
+
+If you have no browser tools, or the flow cannot be reached, submit nothing and say why. An
+interface layer nobody could exercise is a finding, and it is recorded as one. Do not submit a tree
+you did not capture: that is the single thing that would make this worthless.
+
+Do not review the candidate and do not form a verdict. That comes later, with the evidence in front
+of you. Answer with \`captured\` true only if the submission above was accepted.`
 }
 
 function reviewPrompt(text, lens, evidence, requirements, captureToken) {

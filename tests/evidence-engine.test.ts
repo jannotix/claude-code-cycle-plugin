@@ -197,6 +197,14 @@ test("a UI change with no browser gate is refused", async () => {
     assert.equal(gate(evidence, "browser:affected-user-flow")?.status, "failed")
     assert.equal(gate(evidence, "accessibility:affected-user-flow")?.status, "failed")
     assert.equal(outcome.mandatoryPassed, false)
+
+    // Named, not only described. The run reads this to decide whether to dispatch the reviewer that
+    // can drive the flow before the candidate is judged on whether anyone drove it — and picking a
+    // layer out of a sentence would be a parser nobody asked for.
+    assert.deepEqual(
+      [...outcome.failedGates].sort(),
+      ["accessibility:affected-user-flow", "browser:affected-user-flow"],
+    )
   } finally {
     item.close()
   }
@@ -389,6 +397,37 @@ test("a captured browser flow satisfies the interface layer", async () => {
     assert.equal(gate(evidence, "browser:affected-user-flow")?.status, "passed")
     assert.equal(gate(evidence, "accessibility:affected-user-flow")?.status, "passed")
     assert.equal(outcome.mandatoryPassed, true)
+  } finally {
+    item.close()
+  }
+})
+
+/**
+ * The ordering this whole arrangement exists for, end to end.
+ *
+ * The run asks what is missing without moving the workflow, dispatches the reviewer that can drive
+ * the flow, and verifies for real. The subtle part is the second pass: the first one recorded the
+ * interface gates as failed, and a recorded gate is not re-inserted — so the question is whether the
+ * reviewer's submission replaced those rows or merely sat beside them. It has to be a flip, not an
+ * addition, or the candidate stays refused with its proof in the table.
+ */
+test("a first pass names the missing interface layer and a second one sees it proved", async () => {
+  const item = fixture()
+  try {
+    item.write("src/components/Banner.tsx", "export const Banner = () => null\n")
+    const workflowId = await freeze(item)
+
+    const first = await verifyFixture(item, workflowId)
+    assert.equal(first.outcome.mandatoryPassed, false)
+    assert.ok(first.outcome.failedGates.includes("browser:affected-user-flow"))
+
+    submitBrowserEvidence(item.ctx, workflowId, SNAPSHOT, reviewerToken(workflowId))
+
+    const second = await verifyFixture(item, workflowId)
+    assert.equal(gate(second.evidence, "browser:affected-user-flow")?.status, "passed")
+    assert.equal(gate(second.evidence, "accessibility:affected-user-flow")?.status, "passed")
+    assert.deepEqual([...second.outcome.failedGates], [])
+    assert.equal(second.outcome.mandatoryPassed, true)
   } finally {
     item.close()
   }

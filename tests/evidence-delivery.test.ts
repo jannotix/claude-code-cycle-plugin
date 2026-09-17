@@ -314,6 +314,7 @@ test("reconciliation finishes a delivery the application interrupted", async () 
 
     verifyCandidate(item.ctx, workflowId, {
       evidenceIds: [],
+      failedGates: [],
       mandatoryPassed: true,
       reason: "gates passed",
     })
@@ -361,6 +362,7 @@ test("reconciliation delivers an approved candidate whose delivery call never ar
 
     verifyCandidate(item.ctx, workflowId, {
       evidenceIds: [],
+      failedGates: [],
       mandatoryPassed: true,
       reason: "gates passed",
     })
@@ -402,6 +404,7 @@ test("reconciliation leaves an aborted delivery alone and says so", async () => 
 
     verifyCandidate(item.ctx, workflowId, {
       evidenceIds: [],
+      failedGates: [],
       mandatoryPassed: true,
       reason: "gates passed",
     })
@@ -445,6 +448,7 @@ test("delivery through the service moves the workflow to completed and signs the
 
     verifyCandidate(item.ctx, workflowId, {
       evidenceIds: [],
+      failedGates: [],
       mandatoryPassed: true,
       reason: "gates passed",
     })
@@ -478,6 +482,7 @@ test("an aborted delivery does not move the workflow", async () => {
 
     verifyCandidate(item.ctx, workflowId, {
       evidenceIds: [],
+      failedGates: [],
       mandatoryPassed: true,
       reason: "gates passed",
     })

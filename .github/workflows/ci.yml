@@ -90,6 +90,12 @@ jobs:
       - name: test
         run: npm test
 
+      # The component inventory is a published claim about what ships, and it drifted two versions
+      # without anything noticing: `npm run check` has verified it all along and CI never ran that
+      # script, only the steps around it. A claim nothing checks is a claim that goes stale.
+      - name: the component inventory matches what is vendored
+        run: node scripts/sbom.mjs --check
+
       - name: package
         run: npm run package
 

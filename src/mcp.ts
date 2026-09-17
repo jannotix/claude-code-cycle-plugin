@@ -55,14 +55,29 @@ export function serve(identity: ServerIdentity, tools: readonly ToolDefinition[]
   async function handle(line: string): Promise<void> {
     if (!line.trim()) return
 
-    let request: Request
+    let parsed: unknown
     try {
-      request = JSON.parse(line) as Request
+      parsed = JSON.parse(line)
     } catch {
       write({ error: { code: ErrorCode.ParseError, message: "invalid JSON" }, id: null, jsonrpc: JSONRPC })
       return
     }
 
+    // Valid JSON is not a valid request. `null`, `42`, `"text"` and `[]` all parse, and destructuring
+    // any of them throws out of the loop and takes the server down: one line ends the session for
+    // every later request, which is a denial of service reachable from a single malformed frame.
+    // A request that is not an object gets the answer the protocol has for it — id null, because
+    // there is nowhere to read an id from.
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      write({
+        error: { code: ErrorCode.InvalidRequest, message: "a request must be a JSON object" },
+        id: null,
+        jsonrpc: JSONRPC,
+      })
+      return
+    }
+
+    const request = parsed as Request
     const { id, method } = request
     if (typeof method !== "string") {
       if (id !== undefined) {

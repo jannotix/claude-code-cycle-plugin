@@ -1,5 +1,5 @@
 import { release } from "../admission.js";
-import { issueCaptureCapabilities, redeemCaptureCapability } from "../store/capabilities.js";
+import { consumeReviewCapability, issueCaptureCapabilities, issueReviewCapabilities, lookupReviewCapability, redeemCaptureCapability, reissueReviewCapabilities, } from "../store/capabilities.js";
 import { ROLES } from "../config.js";
 import { resolveRole } from "../roles.js";
 import { advanceGoalOfWorkflow, linkStartedWorkflow } from "../goals.js";
@@ -302,6 +302,7 @@ export function freezeCandidate(context, workflowId, captured, now = Date.now())
         candidateDigest,
         candidateId,
         captureCapabilities: issueCaptureCapabilities(context.database, workflowId, candidateId, now),
+        reviewCapabilities: issueReviewCapabilities(context.database, workflowId, candidateId, now),
         files: captured.manifest.files.length,
         state: next.state,
     };
@@ -487,13 +488,40 @@ export function verificationInputs(context, workflowId) {
         taskCommands: loadTasks(context.database, workflowId).flatMap((task) => task.verificationCommands),
     };
 }
-export function submitReviewVerdict(context, workflowId, role, raw, now = Date.now()) {
+export function reissueReviews(context, workflowId, now = Date.now()) {
+    const workflow = load(context, workflowId);
+    if (workflow.state !== "independent_reviews") {
+        throw new WorkflowError(`review capabilities are re-issued while reviews are open, not in ${workflow.state}`);
+    }
+    const candidateId = requireCandidate(workflow);
+    const recorded = loadReviews(context.database, candidateId);
+    if (recorded.length > 0) {
+        throw new WorkflowError(`a review by the ${recorded.map((entry) => entry.role).join(" and ")} is already recorded for ` +
+            "this candidate, so the capabilities are not re-issued. A candidate that needs a different " +
+            "verdict is repaired and frozen again.");
+    }
+    const issued = reissueReviewCapabilities(context.database, workflowId, candidateId, now);
+    record(context, workflowId, "review.capabilities.reissued", {
+        candidate: candidateId,
+        roles: issued.map((entry) => entry.role).join(", "),
+    });
+    return { reviewCapabilities: issued };
+}
+export function submitReviewVerdict(context, workflowId, raw, reviewToken, now = Date.now()) {
     const workflow = load(context, workflowId);
     if (workflow.state !== "independent_reviews") {
         throw new WorkflowError(`a review is only accepted in independent_reviews, not ${workflow.state}`);
     }
     const candidateId = requireCandidate(workflow);
+    const held = lookupReviewCapability(context.database, candidateId, reviewToken);
+    if (held.role === null) {
+        throw new WorkflowError(`this review capability is ${held.reason === "consumed" ? "already spent" : "not valid for this candidate"}. ` +
+            "One is issued to each reviewing role when the candidate is frozen and can be spent once. " +
+            "A review cannot be submitted without it: the role is read from the capability, not from the caller.");
+    }
+    const role = held.role;
     const verdict = parseVerdict(raw, verdictContext(context, workflowId, role));
+    consumeReviewCapability(context.database, reviewToken, now);
     const { reviewsReady } = submitReview(context.database, workflowId, candidateId, role, verdict, now);
     record(context, workflowId, "review.submitted", { decision: verdict.decision, role });
     let next = workflow;

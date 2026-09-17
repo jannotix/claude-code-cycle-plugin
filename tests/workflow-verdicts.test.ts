@@ -26,6 +26,46 @@ test("a well-formed verdict parses", () => {
   assert.equal(parsed.requirements.length, 2)
 })
 
+/**
+ * The identifiers a verdict cites were always checked against what the plane recorded — and an
+ * empty list has nothing to check, so the emptiest citation was also the one that passed. A
+ * requirement called satisfied while naming no evidence is an unverified claim of completion, which
+ * is the one thing this plugin exists to refuse, and it was arriving through the strictest function
+ * in the file.
+ */
+test("a requirement called satisfied while citing nothing is refused", () => {
+  assert.throws(
+    () =>
+      parseVerdict(
+        verdict({
+          requirements: [
+            { evidence_ids: [], requirement_id: "REQ-1", status: "satisfied" },
+            { evidence_ids: ["e2"], requirement_id: "REQ-2", status: "satisfied" },
+          ],
+        }),
+        CONTEXT,
+      ),
+    /satisfied while citing no evidence/u,
+  )
+})
+
+// Not finding evidence is the ordinary reason a requirement fails, so unsatisfied may cite nothing.
+test("a requirement called unsatisfied may cite nothing", () => {
+  const parsed = parseVerdict(
+    verdict({
+      decision: "rejected",
+      repair_target: "execution",
+      requirements: [
+        { evidence_ids: [], requirement_id: "REQ-1", status: "unsatisfied" },
+        { evidence_ids: ["e2"], requirement_id: "REQ-2", status: "satisfied" },
+      ],
+    }),
+    CONTEXT,
+  )
+
+  assert.equal(parsed.requirements[0]?.status, "unsatisfied")
+})
+
 test("an extra key is rejected rather than ignored", () => {
   assert.throws(() => parseVerdict(verdict({ confidence: 0.9 }), CONTEXT), VerdictRejected)
 })
@@ -281,7 +321,7 @@ const alarm = (evidenceIds: string[]) =>
     repair_target: "execution",
     requirements: [
       { evidence_ids: [], requirement_id: "REQ-1", status: "unsatisfied" },
-      { evidence_ids: [], requirement_id: "REQ-2", status: "satisfied" },
+      { evidence_ids: ["e2"], requirement_id: "REQ-2", status: "satisfied" },
     ],
   })
 

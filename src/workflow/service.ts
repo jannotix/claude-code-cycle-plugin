@@ -1,5 +1,12 @@
 import { release } from "../admission.ts"
-import { issueCaptureCapabilities, redeemCaptureCapability } from "../store/capabilities.ts"
+import {
+  consumeReviewCapability,
+  issueCaptureCapabilities,
+  issueReviewCapabilities,
+  lookupReviewCapability,
+  redeemCaptureCapability,
+  reissueReviewCapabilities,
+} from "../store/capabilities.ts"
 import { ROLES, type Configuration } from "../config.ts"
 import { resolveRole } from "../roles.ts"
 import { advanceGoalOfWorkflow, linkStartedWorkflow } from "../goals.ts"
@@ -529,6 +536,9 @@ export function freezeCandidate(
     // One secret per reviewing role, returned exactly once. The run hands each to that role alone,
     // which is what lets the plane know who captured a flow instead of being told.
     captureCapabilities: issueCaptureCapabilities(context.database, workflowId, candidateId, now),
+    // And one per role for the verdict itself, for the same reason: a review that names its own
+    // role is a claim, and the party the separation exists to keep apart can make it.
+    reviewCapabilities: issueReviewCapabilities(context.database, workflowId, candidateId, now),
     files: captured.manifest.files.length,
     state: next.state,
   }
@@ -845,11 +855,59 @@ export function verificationInputs(
   }
 }
 
+/**
+ * Hands a resumed run the capabilities it never received.
+ *
+ * The secrets are returned once, in the freeze reply. A run that resumes after the application
+ * restarted — or one behind a relay that dropped the field, which is a failure this project has
+ * actually seen — never saw that reply, and without this it could not submit a review at all. That
+ * would have removed the full route from `/cycle:resume`, which is a shipped path with its own
+ * certification rows.
+ *
+ * Bounded so the weakening is as small as it can be: only while reviews are open, and only before
+ * any review has been recorded. Once a verdict exists for this candidate, re-issuing would let a
+ * second set of secrets appear alongside a judgement already made. The re-issue is appended to the
+ * history, so it is visible in the record rather than inferred from its absence.
+ */
+export function reissueReviews(context: ServiceContext, workflowId: string, now = Date.now()): unknown {
+  const workflow = load(context, workflowId)
+  if (workflow.state !== "independent_reviews") {
+    throw new WorkflowError(
+      `review capabilities are re-issued while reviews are open, not in ${workflow.state}`,
+    )
+  }
+  const candidateId = requireCandidate(workflow)
+
+  const recorded = loadReviews(context.database, candidateId)
+  if (recorded.length > 0) {
+    throw new WorkflowError(
+      `a review by the ${recorded.map((entry) => entry.role).join(" and ")} is already recorded for ` +
+        "this candidate, so the capabilities are not re-issued. A candidate that needs a different " +
+        "verdict is repaired and frozen again.",
+    )
+  }
+
+  const issued = reissueReviewCapabilities(context.database, workflowId, candidateId, now)
+  record(context, workflowId, "review.capabilities.reissued", {
+    candidate: candidateId,
+    roles: issued.map((entry) => entry.role).join(", "),
+  })
+  return { reviewCapabilities: issued }
+}
+
 export function submitReviewVerdict(
   context: ServiceContext,
   workflowId: string,
-  role: "functional_reviewer" | "security_reviewer",
   raw: unknown,
+  /**
+   * The secret issued to this reviewing role when the candidate was frozen. The role is read from
+   * it and never from the caller: over stdio a submission that names its own role is a claim, and
+   * one client could make it twice with two different names. Holding this proves possession of
+   * something the freeze returned and delivered to one role; it does not prove authorship of the
+   * judgement, because the run relays both verdicts and nothing on this transport can tell a relay
+   * from an author.
+   */
+  reviewToken: string,
   now = Date.now(),
 ): unknown {
   const workflow = load(context, workflowId)
@@ -857,7 +915,22 @@ export function submitReviewVerdict(
     throw new WorkflowError(`a review is only accepted in independent_reviews, not ${workflow.state}`)
   }
   const candidateId = requireCandidate(workflow)
+
+  const held = lookupReviewCapability(context.database, candidateId, reviewToken)
+  if (held.role === null) {
+    throw new WorkflowError(
+      `this review capability is ${held.reason === "consumed" ? "already spent" : "not valid for this candidate"}. ` +
+        "One is issued to each reviewing role when the candidate is frozen and can be spent once. " +
+        "A review cannot be submitted without it: the role is read from the capability, not from the caller.",
+    )
+  }
+  const role = held.role
+
+  // Parsed before the secret is spent, so a verdict the plane refuses as malformed can be retried
+  // with the same one. Authentication and consumption are different questions, and a parse error
+  // should not cost a review its only chance to be recorded.
   const verdict = parseVerdict(raw, verdictContext(context, workflowId, role))
+  consumeReviewCapability(context.database, reviewToken, now)
 
   const { reviewsReady } = submitReview(
     context.database,

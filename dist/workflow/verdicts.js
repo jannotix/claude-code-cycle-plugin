@@ -46,11 +46,11 @@ function parseRequirement(raw, context) {
     if (!context.requirementIds.includes(requirementId)) {
         throw new VerdictRejected(`${context.role} decided requirement ${requirementId}, which is not in the plan`);
     }
-    return {
-        evidenceIds: citedEvidence(entry["evidence_ids"], context),
-        requirementId,
-        status,
-    };
+    const evidenceIds = citedEvidence(entry["evidence_ids"], context);
+    if (status === "satisfied" && evidenceIds.length === 0) {
+        throw new VerdictRejected(`${context.role} called requirement ${requirementId} satisfied while citing no evidence`);
+    }
+    return { evidenceIds, requirementId, status };
 }
 function parseFinding(raw, context) {
     const entry = exactKeys(raw, ["evidence_ids", "severity", "summary"], context.role);

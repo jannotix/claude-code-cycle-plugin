@@ -3,6 +3,76 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.25] - 2026-09-17
+
+An external review of the control plane found five defects. Four of them let something through that
+this plugin exists to stop, and each is closed here with a test that fails when the fix is removed.
+
+### Fixed
+
+- **A review named its own role, so two reviews could come from one party.** `submit_review` took
+  the reviewer's role as an argument. The control plane speaks over stdio: it reads a line and has
+  no way to know who wrote it, so a single client could submit both verdicts naming a different role
+  each time, and the record would show two independent reviews that were never independent. The
+  separation between the reviewers is the guarantee the whole design rests on, and it was a string.
+
+  Worse, the write was an upsert keyed on `(candidate_id, role)`: a second submission for a role
+  replaced the first. A rejection could be overwritten with an approval by whoever sent the next
+  line, and nothing in the record would show that it had ever been a rejection.
+
+  Freezing a candidate now mints one secret per reviewing role, keeps only its digest, and returns
+  each exactly once — the mechanism already used for a captured browser flow, applied to the verdict
+  itself. The role is read from the secret and is no longer an argument. A recorded review is not
+  replaceable; a candidate that needs a different verdict gets a repair and a new freeze. Arbitration
+  opens on two distinct roles rather than on two rows.
+
+  What this proves is worth stating exactly, because the difference matters when it is quoted:
+  holding the secret proves possession of something the freeze returned and handed to one role. It
+  closes impersonation by the executor, by another workflow, and by any session that never received
+  it. It does not prove authorship of the judgement — the run relays both verdicts, and nothing
+  carried over this transport can tell a relay from an author. The same limit has always applied to
+  the capture capability beside it.
+
+- **A requirement could be called satisfied while citing no evidence at all.** The identifiers in a
+  verdict were checked against what the plane recorded, and an empty list has nothing to check — so
+  the emptiest citation was the one that passed. A requirement marked satisfied naming no evidence
+  is an unverified claim of completion, which is the single thing this plugin exists to refuse, and
+  it was arriving through the strictest function in the file. Unsatisfied may still cite nothing:
+  not finding evidence is the ordinary reason a requirement fails.
+
+- **The interface gate was judged before anyone who could satisfy it had been asked.** The gate that
+  requires an affected user flow to have been driven can only be satisfied by a reviewer — the
+  executor cannot clear a gate that checks its own work — and the reviewers are dispatched after
+  verification. Under `strict` that failed the candidate into repair and the reviewer was never
+  reached; under `standard` the gate was skipped without blocking, which made a mandatory gate
+  decorative. Neither is verification.
+
+  The run now asks the plane what is missing without moving the workflow, dispatches the functional
+  reviewer to drive the flow and spend its own capture capability, and then verifies for real. The
+  decision about whether the interface layer is required stays where it was — read from the gates
+  the plane recorded, not re-derived from a path pattern kept in a second place. A reviewer that
+  cannot drive the flow says so and the layer stays unproven, which is a finding and not a failure
+  of the run. The verification outcome now names the gates that did not pass, so a caller deciding
+  what to do about one layer does not have to parse a sentence to find out which layer it was.
+
+- **One line of valid JSON could end the session.** `null`, a number, a string and an array all
+  parse, so they cleared the JSON guard and were then destructured — which throws, unhandled, and
+  takes down every later request on that connection. The test that existed covered text that is not
+  JSON at all, so the whole class sat behind a green assertion. A request that is not an object is
+  now answered as an invalid request and the session continues.
+
+- **The component inventory was two versions stale.** `sbom.cdx.json` still declared 1.0.22.
+  `npm run check` has verified it all along, and CI ran the steps around that script and never the
+  script itself. The inventory is regenerated, and CI now fails when it does not match what is
+  vendored: a published claim nothing checks is a claim that goes stale.
+
+### Reviewed and left as it is
+
+- A critical or high security finding with no executed proof is recorded at `info` with its label
+  rather than suppressed or rejected. This is deliberate and unchanged: the security reviewer can
+  execute proofs against a disposable copy of the candidate, the arbiter's instructions explain the
+  downgrade, and the claim survives in the record with the fact that nobody demonstrated it.
+
 ## [1.0.24] - 2026-09-08
 
 ### Fixed

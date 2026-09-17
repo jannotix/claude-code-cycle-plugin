@@ -89,6 +89,7 @@ export async function verify(input) {
     const failed = mandatory.filter((item) => item.status !== "passed");
     return {
         evidenceIds: stored.map((item) => item.id),
+        failedGates: failed.map((item) => item.gateName),
         mandatoryPassed: mandatory.length > 0 && failed.length === 0,
         reason: describe(mandatory.length, failed.map((item) => item.gateName)),
     };

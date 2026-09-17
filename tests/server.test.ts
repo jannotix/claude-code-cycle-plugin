@@ -84,3 +84,25 @@ test("malformed input does not terminate the server", async () => {
   assert.ok(byId(responses, 7) !== undefined, "the request after the malformed line was answered")
   assert.ok(responses.some((response) => response.error !== undefined))
 })
+
+/**
+ * Valid JSON is not a valid request, and the gap between the two was a way to end the session from
+ * one line. `null`, a number, a string and an array all parse, so they cleared the try/catch above
+ * and were then destructured — which throws, unhandled, and takes every later request down with it.
+ * The test that existed covered only text that is not JSON at all, so the whole class sat behind a
+ * green assertion.
+ */
+test("valid JSON that is not a request is refused, and the session survives it", async () => {
+  for (const frame of ["null", "42", '"text"', "[]", "true"]) {
+    const responses = await exchange([frame, { id: 9, jsonrpc: "2.0", method: "ping" }])
+
+    assert.ok(
+      byId(responses, 9) !== undefined,
+      `the request after ${frame} was answered, so the server was still alive`,
+    )
+    assert.ok(
+      responses.some((response) => response.error?.code === -32_600),
+      `${frame} was answered with invalid request`,
+    )
+  }
+})

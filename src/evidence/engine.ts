@@ -155,6 +155,7 @@ export async function verify(input: VerificationInput): Promise<VerificationOutc
 
   return {
     evidenceIds: stored.map((item) => item.id),
+    failedGates: failed.map((item) => item.gateName),
     mandatoryPassed: mandatory.length > 0 && failed.length === 0,
     reason: describe(mandatory.length, failed.map((item) => item.gateName)),
   }

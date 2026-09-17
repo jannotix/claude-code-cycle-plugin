@@ -311,12 +311,23 @@ export function submitReview(
   verdict: Verdict,
   now: number,
 ): { reviewsReady: boolean } {
+  // No upsert. This was `on conflict (candidate_id, role) do update`, which made a recorded review
+  // replaceable: a rejection could be overwritten by whoever sent the next line naming the same
+  // role, and the record would show only the approval. A review is a judgement about a frozen
+  // candidate — it is not a draft, and a candidate that needs a different verdict gets a repair and
+  // a new freeze, which mints new capabilities.
+  const existing = database.get<Row>(
+    "select id from reviews where candidate_id = ? and role = ?",
+    candidateId,
+    role,
+  )
+  if (existing !== undefined) {
+    throw new Error(`a review by the ${role} is already recorded for this candidate`)
+  }
+
   database.run(
     `insert into reviews (id, workflow_id, candidate_id, role, verdict, verdict_digest, submitted_at)
-     values (?, ?, ?, ?, ?, ?, ?)
-     on conflict (candidate_id, role) do update set
-       verdict = excluded.verdict, verdict_digest = excluded.verdict_digest,
-       submitted_at = excluded.submitted_at`,
+     values (?, ?, ?, ?, ?, ?, ?)`,
     newId(),
     workflowId,
     candidateId,
@@ -326,11 +337,13 @@ export function submitReview(
     now,
   )
 
-  const count = database.get<{ total: number }>(
-    "select count(*) as total from reviews where candidate_id = ?",
+  // Distinct roles, not two rows. Counting rows was correct only because the upsert above kept one
+  // per role; with the upsert gone, counting would still be the wrong question to ask.
+  const count = database.get<{ roles: number }>(
+    "select count(distinct role) as roles from reviews where candidate_id = ?",
     candidateId,
   )
-  return { reviewsReady: (count?.total ?? 0) >= 2 }
+  return { reviewsReady: (count?.roles ?? 0) >= 2 }
 }
 
 export function loadReviews(

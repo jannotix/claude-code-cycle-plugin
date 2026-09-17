@@ -20,7 +20,7 @@ import { Runtime } from "./runtime.js";
 import { graphSize } from "./store/graph.js";
 import { appendHistory } from "./store/history.js";
 import { pruneCandidateBytes, storeUsage } from "./store/retention.js";
-import { arbitrate, candidateEvidence, exportState, control, deliverCandidate, historyState, mandatoryGatesPassed, recallForRequest, reconcile, declareScope, freezeCandidate, reportTask, startWorkflow, submitPlan, submitBrowserEvidence, submitReviewVerdict, submitSecurityProof, verificationInputs, verifyCandidate, workflowStatus, } from "./workflow/service.js";
+import { arbitrate, candidateEvidence, exportState, control, deliverCandidate, historyState, mandatoryGatesPassed, recallForRequest, reconcile, declareScope, freezeCandidate, reportTask, startWorkflow, submitPlan, reissueReviews, submitBrowserEvidence, submitReviewVerdict, submitSecurityProof, verificationInputs, verifyCandidate, workflowStatus, } from "./workflow/service.js";
 const VERSION = manifestVersion();
 function manifestVersion() {
     try {
@@ -244,6 +244,7 @@ const WORKFLOW_OPERATIONS = [
     "report_task",
     "freeze_candidate",
     "verify",
+    "review_capabilities",
     "submit_review",
     "submit_browser_evidence",
     "run_proof",
@@ -472,6 +473,11 @@ const workflowTool = {
         "records a captured user flow and its accessibility tree. A reviewer proves the interface " +
         "layer by spending the `captureToken` it was issued when the candidate was frozen; a " +
         "submission without one is recorded as a self-report and carries no weight. " +
+        "`submit_review` requires the `reviewToken` issued to that reviewing role at the same freeze. " +
+        "The role is read from the token and is not an argument: a review that named its own role " +
+        "could be sent twice by one client under two names, and the plane would record two reviews " +
+        "that were never independent. A token is spent once, and a verdict the plane refuses as " +
+        "malformed does not spend it — retry with the same one. " +
         "`run_proof` executes one security proof against a disposable copy of the candidate: supply " +
         "the proof source as `script` and write it so exit code 0 means the vulnerability was shown. " +
         "`declare_scope` states, once and before any writing, the paths a quick-route change may write to: that route has no architect and therefore no plan, and reconciliation has nothing to compare the worktree against until it is declared. " +
@@ -499,6 +505,8 @@ const workflowTool = {
             reason: { maxLength: 512, type: "string" },
             script: { maxLength: 65_536, type: "string" },
             captureToken: { maxLength: 128, type: "string" },
+            reviewToken: { maxLength: 128, type: "string" },
+            dryRun: { type: "boolean" },
             snapshot: { type: "object" },
             request: { maxLength: 100_000, type: "string" },
             role: { enum: ["functional_reviewer", "security_reviewer"], type: "string" },
@@ -557,10 +565,14 @@ const workflowTool = {
                     strictness: cycle.configuration.gateStrictness,
                     taskCommands: inputs.taskCommands,
                 });
+                if (args["dryRun"] === true)
+                    return { ...outcome, dryRun: true, state: null };
                 return verifyCandidate(context, workflowId, outcome);
             }
+            case "review_capabilities":
+                return reissueReviews(context, id());
             case "submit_review":
-                return submitReviewVerdict(context, id(), args["role"] ?? "functional_reviewer", args["verdict"]);
+                return submitReviewVerdict(context, id(), args["verdict"], typeof args["reviewToken"] === "string" ? args["reviewToken"] : "");
             case "submit_browser_evidence": {
                 const token = typeof args["captureToken"] === "string" ? args["captureToken"] : null;
                 return submitBrowserEvidence(context, id(), args["snapshot"], token);

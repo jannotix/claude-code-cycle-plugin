@@ -10,7 +10,7 @@ import type { CapturedCandidate } from "../src/evidence/candidate.ts"
 import { Database } from "../src/store/database.ts"
 import { newId } from "../src/store/ids.ts"
 import { lastEvent } from "../src/store/history.ts"
-import { lastRefusal, loadWorkflow } from "../src/store/workflows.ts"
+import { lastRefusal, loadWorkflow, submitReview } from "../src/store/workflows.ts"
 import {
   arbitrate,
   control,
@@ -51,11 +51,19 @@ const PLAN = {
   ],
 }
 
+/**
+ * The identifier the fixtures cite. A satisfied requirement has to name evidence the plane
+ * recorded, so the helper that drives a workflow to arbitration records one gate under this id
+ * first. Fixed rather than generated because the approval below is a constant, and a constant
+ * cannot cite something minted after it.
+ */
+const GATE_ID = "ev-fixture-1"
+
 const APPROVAL = {
   decision: "approved",
   findings: [],
   repair_target: null,
-  requirements: [{ evidence_ids: [], requirement_id: "REQ-1", status: "satisfied" }],
+  requirements: [{ evidence_ids: [GATE_ID], requirement_id: "REQ-1", status: "satisfied" }],
 }
 
 const REJECTION = {
@@ -96,6 +104,41 @@ function context(): { close: () => void; ctx: ServiceContext } {
 
 const state = (value: unknown): string => (value as { state: string }).state
 
+/**
+ * Seeds one citable gate on the workflow's current candidate and returns its identifier.
+ *
+ * Deliberately not mandatory: the tests that assert an approval needs passing mandatory gates read
+ * the same table, and a mandatory row here would satisfy the very thing they exist to prove is not
+ * satisfied. A repaired candidate needs its own, because evidence belongs to the candidate it ran
+ * against and citing the replaced one is refused — which is its own test.
+ */
+const citableGate = (ctx: ServiceContext, workflowId: string, fixedId?: string): string =>
+  seedEvidence(ctx, currentCandidate(ctx, workflowId), "fixture:cited", "passed", 0, fixedId)
+
+/**
+ * Freezes the candidate and keeps the review capabilities it minted, by role. A review can only be
+ * submitted by whoever holds the secret issued at the freeze, so a test that submits one has to go
+ * through here rather than naming a role in the call.
+ */
+interface ReviewTokens {
+  readonly functional_reviewer: string
+  readonly security_reviewer: string
+}
+
+function freezeIssuing(ctx: ServiceContext, workflowId: string): ReviewTokens {
+  const frozen = freezeCandidate(ctx, workflowId, emptyCandidate()) as {
+    reviewCapabilities: readonly { role: string; token: string }[]
+  }
+  const issued = Object.fromEntries(frozen.reviewCapabilities.map((one) => [one.role, one.token]))
+  return issued as unknown as ReviewTokens
+}
+
+/** An approval that cites one specific recorded gate. */
+const approving = (evidenceId: string): unknown => ({
+  ...APPROVAL,
+  requirements: [{ evidence_ids: [evidenceId], requirement_id: "REQ-1", status: "satisfied" }],
+})
+
 /** Drives a workflow to arbitration with verification reported as passing. */
 function toArbitration(ctx: ServiceContext, reviews: unknown[] = [APPROVAL, APPROVAL]): string {
   const started = startWorkflow(ctx, "add oauth login to the dashboard", ["src/auth.ts"], "full") as {
@@ -105,11 +148,12 @@ function toArbitration(ctx: ServiceContext, reviews: unknown[] = [APPROVAL, APPR
 
   submitPlan(ctx, id, PLAN)
   reportTask(ctx, id, "task-1", "completed", "done")
-  freezeCandidate(ctx, id, emptyCandidate())
-  verifyCandidate(ctx, id, { evidenceIds: ["e1"], mandatoryPassed: true, reason: "gates passed" })
+  const tokens = freezeIssuing(ctx, id)
+  citableGate(ctx, id, GATE_ID)
+  verifyCandidate(ctx, id, { evidenceIds: [GATE_ID], failedGates: [], mandatoryPassed: true, reason: "gates passed" })
 
-  submitReviewVerdict(ctx, id, "functional_reviewer", reviews[0])
-  submitReviewVerdict(ctx, id, "security_reviewer", reviews[1])
+  submitReviewVerdict(ctx, id, reviews[0], tokens.functional_reviewer)
+  submitReviewVerdict(ctx, id, reviews[1], tokens.security_reviewer)
   return id
 }
 
@@ -247,12 +291,13 @@ test("an approval without passing gates is refused and consumes a repair cycle",
     const id = started.workflowId
     submitPlan(ctx, id, PLAN)
     reportTask(ctx, id, "task-1", "completed", "done")
-    freezeCandidate(ctx, id, emptyCandidate())
-    verifyCandidate(ctx, id, { evidenceIds: ["e1"], mandatoryPassed: true, reason: "" })
-    submitReviewVerdict(ctx, id, "functional_reviewer", APPROVAL)
-    submitReviewVerdict(ctx, id, "security_reviewer", APPROVAL)
+    const tokens = freezeIssuing(ctx, id)
+    const cited = citableGate(ctx, id)
+    verifyCandidate(ctx, id, { evidenceIds: [cited], failedGates: [], mandatoryPassed: true, reason: "" })
+    submitReviewVerdict(ctx, id, approving(cited), tokens.functional_reviewer)
+    submitReviewVerdict(ctx, id, approving(cited), tokens.security_reviewer)
 
-    const result = arbitrate(ctx, id, APPROVAL, false) as {
+    const result = arbitrate(ctx, id, approving(cited), false) as {
       decision: string
       refusal: string | null
       repair: { used: number }
@@ -325,11 +370,132 @@ test("arbitration in full mode requires both reviews", () => {
     const id = started.workflowId
     submitPlan(ctx, id, PLAN)
     reportTask(ctx, id, "task-1", "completed", "done")
-    freezeCandidate(ctx, id, emptyCandidate())
-    verifyCandidate(ctx, id, { evidenceIds: [], mandatoryPassed: true, reason: "" })
-    submitReviewVerdict(ctx, id, "functional_reviewer", APPROVAL)
+    const tokens = freezeIssuing(ctx, id)
+    const cited = citableGate(ctx, id)
+    verifyCandidate(ctx, id, { evidenceIds: [cited], failedGates: [], mandatoryPassed: true, reason: "" })
+    submitReviewVerdict(ctx, id, approving(cited), tokens.functional_reviewer)
 
-    assert.throws(() => arbitrate(ctx, id, APPROVAL, true), /only accepted in arbitration/u)
+    assert.throws(() => arbitrate(ctx, id, approving(cited), true), /only accepted in arbitration/u)
+  } finally {
+    close()
+  }
+})
+
+/**
+ * The separation between the two reviewers was a string in an argument. Over stdio the plane reads
+ * a line and cannot tell who wrote it, so one client could send both verdicts naming a different
+ * role each time and the record would show two independent reviews that were never independent.
+ */
+test("a review cannot be submitted without the capability issued at the freeze", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "add oauth login", ["src/auth.ts"], "full") as {
+      workflowId: string
+    }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const tokens = freezeIssuing(ctx, id)
+    const cited = citableGate(ctx, id)
+    verifyCandidate(ctx, id, { evidenceIds: [cited], failedGates: [], mandatoryPassed: true, reason: "" })
+
+    assert.throws(
+      () => submitReviewVerdict(ctx, id, approving(cited), "not-a-capability"),
+      /not valid for this candidate/u,
+    )
+    // And the real one still works, so the refusal above is about the capability and not the verdict.
+    submitReviewVerdict(ctx, id, approving(cited), tokens.functional_reviewer)
+  } finally {
+    close()
+  }
+})
+
+test("one capability cannot be spent twice, so one holder cannot cast both reviews", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "add oauth login", ["src/auth.ts"], "full") as {
+      workflowId: string
+    }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const tokens = freezeIssuing(ctx, id)
+    const cited = citableGate(ctx, id)
+    verifyCandidate(ctx, id, { evidenceIds: [cited], failedGates: [], mandatoryPassed: true, reason: "" })
+
+    submitReviewVerdict(ctx, id, approving(cited), tokens.functional_reviewer)
+    assert.throws(
+      () => submitReviewVerdict(ctx, id, approving(cited), tokens.functional_reviewer),
+      /already spent/u,
+    )
+  } finally {
+    close()
+  }
+})
+
+/**
+ * The write was an upsert keyed on (candidate_id, role), so a second submission for a role replaced
+ * the first: a rejection could be overwritten with an approval by whoever sent the next line, and
+ * the record would show only the approval. A review is a judgement about frozen bytes, not a draft.
+ */
+test("a recorded review cannot be overwritten by a later one for the same role", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "add oauth login", ["src/auth.ts"], "full") as {
+      workflowId: string
+    }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const tokens = freezeIssuing(ctx, id)
+    const cited = citableGate(ctx, id)
+    verifyCandidate(ctx, id, { evidenceIds: [cited], failedGates: [], mandatoryPassed: true, reason: "" })
+
+    submitReviewVerdict(ctx, id, REJECTION, tokens.functional_reviewer)
+
+    // Straight at the store, so the test is about the record and not about the capability that
+    // already refuses a second spend one layer up.
+    assert.throws(
+      () =>
+        submitReview(
+          ctx.database,
+          id,
+          currentCandidate(ctx, id),
+          "functional_reviewer",
+          { decision: "approved", findings: [], repairTarget: null, requirements: [] },
+          Date.now(),
+        ),
+      /already recorded/u,
+    )
+  } finally {
+    close()
+  }
+})
+
+/** Two rows were enough to open arbitration. Two rows are not two reviewers. */
+test("arbitration opens on two distinct roles, not on two rows", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "add oauth login", ["src/auth.ts"], "full") as {
+      workflowId: string
+    }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const tokens = freezeIssuing(ctx, id)
+    const cited = citableGate(ctx, id)
+    verifyCandidate(ctx, id, { evidenceIds: [cited], failedGates: [], mandatoryPassed: true, reason: "" })
+
+    const first = submitReviewVerdict(ctx, id, approving(cited), tokens.functional_reviewer) as {
+      reviewsReady: boolean
+    }
+    assert.equal(first.reviewsReady, false)
+
+    const second = submitReviewVerdict(ctx, id, approving(cited), tokens.security_reviewer) as {
+      reviewsReady: boolean
+    }
+    assert.equal(second.reviewsReady, true)
+    assert.equal(loadWorkflow(ctx.database, id)?.state, "arbitration")
   } finally {
     close()
   }
@@ -370,6 +536,7 @@ test("failed verification sends the workflow back to repair", () => {
 
     const result = verifyCandidate(ctx, id, {
       evidenceIds: [],
+      failedGates: [],
       mandatoryPassed: false,
       reason: "no gate ran",
     })
@@ -455,11 +622,12 @@ test("a rejected candidate re-enters execution through a repair", () => {
 
     // The second cycle runs to arbitration exactly like the first.
     reportTask(ctx, id, "task-1", "completed", "repaired")
-    freezeCandidate(ctx, id, emptyCandidate())
-    verifyCandidate(ctx, id, { evidenceIds: [], mandatoryPassed: true, reason: "gates passed" })
-    submitReviewVerdict(ctx, id, "functional_reviewer", APPROVAL)
-    submitReviewVerdict(ctx, id, "security_reviewer", APPROVAL)
-    assert.equal(state(arbitrate(ctx, id, APPROVAL, true)), "delivery")
+    const tokens = freezeIssuing(ctx, id)
+    const repaired = citableGate(ctx, id)
+    verifyCandidate(ctx, id, { evidenceIds: [repaired], failedGates: [], mandatoryPassed: true, reason: "gates passed" })
+    submitReviewVerdict(ctx, id, approving(repaired), tokens.functional_reviewer)
+    submitReviewVerdict(ctx, id, approving(repaired), tokens.security_reviewer)
+    assert.equal(state(arbitrate(ctx, id, approving(repaired), true)), "delivery")
   } finally {
     close()
   }
@@ -491,6 +659,7 @@ test("the quick route arbitrates without a plan", () => {
     freezeCandidate(ctx, started.workflowId, emptyCandidate())
     verifyCandidate(ctx, started.workflowId, {
       evidenceIds: [],
+      failedGates: [],
       mandatoryPassed: true,
       reason: "gates passed",
     })
@@ -528,8 +697,10 @@ function seedEvidence(
   gate: string,
   status: string,
   mandatory = 1,
+  /** Fixed when a constant verdict has to cite it: a constant cannot name something minted later. */
+  fixedId?: string,
 ): string {
-  const id = newId()
+  const id = fixedId ?? newId()
   ctx.database.run(
     `insert into evidence (
        id, candidate_id, gate_name, kind, status, mandatory, invocation,
@@ -602,11 +773,11 @@ test("evidence from a replaced candidate cannot be cited", () => {
     arbitrate(ctx, id, REJECTION, false)
     control(ctx, id, "repair")
     reportTask(ctx, id, "task-1", "completed", "repaired")
-    freezeCandidate(ctx, id, emptyCandidate())
+    const tokens = freezeIssuing(ctx, id)
     const fresh = seedEvidence(ctx, currentCandidate(ctx, id), "test:second", "passed")
-    verifyCandidate(ctx, id, { evidenceIds: [fresh], mandatoryPassed: true, reason: "gates passed" })
-    submitReviewVerdict(ctx, id, "functional_reviewer", APPROVAL)
-    submitReviewVerdict(ctx, id, "security_reviewer", APPROVAL)
+    verifyCandidate(ctx, id, { evidenceIds: [fresh], failedGates: [], mandatoryPassed: true, reason: "gates passed" })
+    submitReviewVerdict(ctx, id, approving(fresh), tokens.functional_reviewer)
+    submitReviewVerdict(ctx, id, approving(fresh), tokens.security_reviewer)
 
     const cite = (evidenceId: string) => ({
       ...APPROVAL,
@@ -1051,11 +1222,12 @@ test("what the last refusal said is carried back for the repair", () => {
     const id = started.workflowId
     submitPlan(ctx, id, PLAN)
     reportTask(ctx, id, "task-1", "completed", "done")
-    freezeCandidate(ctx, id, emptyCandidate())
-    verifyCandidate(ctx, id, { evidenceIds: ["e1"], mandatoryPassed: true, reason: "" })
+    const tokens = freezeIssuing(ctx, id)
+    const cited = citableGate(ctx, id)
+    verifyCandidate(ctx, id, { evidenceIds: [cited], failedGates: [], mandatoryPassed: true, reason: "" })
 
-    submitReviewVerdict(ctx, id, "functional_reviewer", APPROVAL)
-    submitReviewVerdict(ctx, id, "security_reviewer", REJECTION)
+    submitReviewVerdict(ctx, id, approving(cited), tokens.functional_reviewer)
+    submitReviewVerdict(ctx, id, REJECTION, tokens.security_reviewer)
     arbitrate(ctx, id, REJECTION, true)
 
     const status = workflowStatus(ctx, id) as {

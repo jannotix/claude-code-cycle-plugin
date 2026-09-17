@@ -129,13 +129,14 @@ export function frozenFiles(database, candidateId) {
     }));
 }
 export function submitReview(database, workflowId, candidateId, role, verdict, now) {
+    const existing = database.get("select id from reviews where candidate_id = ? and role = ?", candidateId, role);
+    if (existing !== undefined) {
+        throw new Error(`a review by the ${role} is already recorded for this candidate`);
+    }
     database.run(`insert into reviews (id, workflow_id, candidate_id, role, verdict, verdict_digest, submitted_at)
-     values (?, ?, ?, ?, ?, ?, ?)
-     on conflict (candidate_id, role) do update set
-       verdict = excluded.verdict, verdict_digest = excluded.verdict_digest,
-       submitted_at = excluded.submitted_at`, newId(), workflowId, candidateId, role, JSON.stringify(verdict), digest(DIGEST_DOMAIN.verdict, verdict), now);
-    const count = database.get("select count(*) as total from reviews where candidate_id = ?", candidateId);
-    return { reviewsReady: (count?.total ?? 0) >= 2 };
+     values (?, ?, ?, ?, ?, ?, ?)`, newId(), workflowId, candidateId, role, JSON.stringify(verdict), digest(DIGEST_DOMAIN.verdict, verdict), now);
+    const count = database.get("select count(distinct role) as roles from reviews where candidate_id = ?", candidateId);
+    return { reviewsReady: (count?.roles ?? 0) >= 2 };
 }
 export function loadReviews(database, candidateId) {
     return database

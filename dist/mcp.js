@@ -29,14 +29,23 @@ export function serve(identity, tools) {
     async function handle(line) {
         if (!line.trim())
             return;
-        let request;
+        let parsed;
         try {
-            request = JSON.parse(line);
+            parsed = JSON.parse(line);
         }
         catch {
             write({ error: { code: ErrorCode.ParseError, message: "invalid JSON" }, id: null, jsonrpc: JSONRPC });
             return;
         }
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            write({
+                error: { code: ErrorCode.InvalidRequest, message: "a request must be a JSON object" },
+                id: null,
+                jsonrpc: JSONRPC,
+            });
+            return;
+        }
+        const request = parsed;
         const { id, method } = request;
         if (typeof method !== "string") {
             if (id !== undefined) {

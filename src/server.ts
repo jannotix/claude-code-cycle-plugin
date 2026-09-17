@@ -52,6 +52,7 @@ import {
   reportTask,
   startWorkflow,
   submitPlan,
+  reissueReviews,
   submitBrowserEvidence,
   submitReviewVerdict,
   submitSecurityProof,
@@ -343,6 +344,7 @@ const WORKFLOW_OPERATIONS = [
   "report_task",
   "freeze_candidate",
   "verify",
+  "review_capabilities",
   "submit_review",
   "submit_browser_evidence",
   "run_proof",
@@ -614,6 +616,11 @@ const workflowTool: ToolDefinition = {
     "records a captured user flow and its accessibility tree. A reviewer proves the interface " +
     "layer by spending the `captureToken` it was issued when the candidate was frozen; a " +
     "submission without one is recorded as a self-report and carries no weight. " +
+    "`submit_review` requires the `reviewToken` issued to that reviewing role at the same freeze. " +
+    "The role is read from the token and is not an argument: a review that named its own role " +
+    "could be sent twice by one client under two names, and the plane would record two reviews " +
+    "that were never independent. A token is spent once, and a verdict the plane refuses as " +
+    "malformed does not spend it — retry with the same one. " +
     "`run_proof` executes one security proof against a disposable copy of the candidate: supply " +
     "the proof source as `script` and write it so exit code 0 means the vulnerability was shown. " +
     "`declare_scope` states, once and before any writing, the paths a quick-route change may write to: that route has no architect and therefore no plan, and reconciliation has nothing to compare the worktree against until it is declared. " +
@@ -641,6 +648,8 @@ const workflowTool: ToolDefinition = {
       reason: { maxLength: 512, type: "string" },
       script: { maxLength: 65_536, type: "string" },
       captureToken: { maxLength: 128, type: "string" },
+      reviewToken: { maxLength: 128, type: "string" },
+      dryRun: { type: "boolean" },
       snapshot: { type: "object" },
       request: { maxLength: 100_000, type: "string" },
       role: { enum: ["functional_reviewer", "security_reviewer"], type: "string" },
@@ -726,14 +735,31 @@ const workflowTool: ToolDefinition = {
           strictness: cycle.configuration.gateStrictness,
           taskCommands: inputs.taskCommands,
         })
+        // `dryRun` runs the gates and records their evidence without moving the workflow. It exists
+        // for one ordering problem: the interface layer is proved by a flow a reviewer drove, and
+        // the reviewer is dispatched after verification. So the gate that asks for an independently
+        // driven flow was judged before anyone who could drive it had been asked — failing the
+        // candidate into repair under strict, and being skipped without blocking under standard,
+        // which made a mandatory gate decorative. The run now asks what is missing, gives the
+        // reviewer its chance to supply it, and then verifies for real.
+        if (args["dryRun"] === true) return { ...outcome, dryRun: true, state: null }
         return verifyCandidate(context, workflowId, outcome)
       }
+      case "review_capabilities":
+        // For a run that resumed, or one behind a relay that dropped the field, and so never saw
+        // the freeze reply. Bounded to reviews-open with no verdict recorded yet, and appended to
+        // the history so a re-issue is visible in the record instead of inferred from its absence.
+        return reissueReviews(context, id())
       case "submit_review":
+        // The role is never taken from the caller: it is read from the capability the caller spends,
+        // exactly as for a captured flow. A submission that names its own role is a claim, and one
+        // client naming a different role each time would produce two reviews that were never
+        // independent.
         return submitReviewVerdict(
           context,
           id(),
-          (args["role"] as "functional_reviewer" | "security_reviewer") ?? "functional_reviewer",
           args["verdict"],
+          typeof args["reviewToken"] === "string" ? args["reviewToken"] : "",
         )
       case "submit_browser_evidence": {
         // The role is never taken from the caller: it is read from the capability the caller spends.

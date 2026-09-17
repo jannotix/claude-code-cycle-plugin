@@ -55,6 +55,12 @@ export interface Evidence {
 /** What the engine reports back to the state machine, and the only thing it may act on. */
 export interface VerificationOutcome {
   readonly evidenceIds: readonly string[]
+  /**
+   * The mandatory gates that did not pass, by name. The reason below says the same thing in a
+   * sentence, and a caller deciding what to do about one particular layer should not have to parse
+   * prose to find out which layer it was.
+   */
+  readonly failedGates: readonly string[]
   readonly mandatoryPassed: boolean
   readonly reason: string
 }

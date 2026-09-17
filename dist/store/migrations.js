@@ -379,5 +379,32 @@ create table capture_capabilities (
 create index capture_capabilities_by_candidate on capture_capabilities (candidate_id);
 `,
     },
+    {
+        version: 8,
+        name: "review-capability",
+        sql: `
+-- The same reasoning as the capture capability, applied to the thing it was missing from: the
+-- verdict itself. A review named its own role in an argument, so one client could submit both and
+-- the plane would record two independent reviews that were never independent. Worse, the write was
+-- an upsert keyed on (candidate_id, role), so a second submission for a role replaced the first —
+-- a rejection could be overwritten with an approval by whoever sent the next line.
+--
+-- One secret per reviewing role, minted when the candidate is frozen and handed to that role alone.
+-- The role is read from the record. Spending is separate from looking up, so a verdict the plane
+-- refuses as malformed can be retried with the same secret: authentication and consumption are
+-- different questions and a parse error should not cost a review.
+create table review_capabilities (
+  digest       text primary key,
+  workflow_id  text not null references workflows (id) on delete cascade,
+  candidate_id text not null references candidates (id) on delete cascade,
+  role         text not null,
+  issued_at    integer not null,
+  consumed_at  integer,
+  unique (candidate_id, role)
+) strict;
+
+create index review_capabilities_by_candidate on review_capabilities (candidate_id);
+`,
+    },
 ];
 export const CURRENT_SCHEMA_VERSION = MIGRATIONS.reduce((highest, migration) => Math.max(highest, migration.version), 0);

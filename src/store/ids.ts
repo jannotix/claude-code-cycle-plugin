@@ -12,6 +12,7 @@ export const DIGEST_DOMAIN = {
   output: "cycle/verification-output/v1",
   request: "cycle/request/v1",
   requestAmendment: "cycle/request-amendment/v1",
+  reviewCapability: "cycle/review-capability/v1",
   verdict: "cycle/verdict/v1",
 } as const
 
