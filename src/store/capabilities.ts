@@ -29,9 +29,11 @@ export function issueCaptureCapabilities(
   workflowId: string,
   candidateId: string,
   now: number,
+  /** Which roles to mint for. A re-issue narrows this to the roles that still need one. */
+  roles: readonly CapturingRole[] = CAPTURING_ROLES,
 ): CaptureCapability[] {
   const issued: CaptureCapability[] = []
-  for (const role of CAPTURING_ROLES) {
+  for (const role of roles) {
     const existing = database.get<Row>(
       "select digest from capture_capabilities where candidate_id = ? and role = ?",
       candidateId,
@@ -52,6 +54,55 @@ export function issueCaptureCapabilities(
     issued.push({ role, token })
   }
   return issued
+}
+
+/**
+ * Mints a fresh set for the same candidate, invalidating whatever the freeze returned.
+ *
+ * The freeze returns these exactly once, and a reply lost on its way back to the run leaves them
+ * minted and unreachable. The candidate cannot simply be frozen again — the machine refuses
+ * `candidate_ready` outside execution — so without this the interface gate stayed unsatisfiable for
+ * that candidate and the run failed verification for a reason that had nothing to do with the work.
+ * The twin of `reissueReviewCapabilities`, and it shares the weakness stated there: whoever can ask
+ * the plane at the right moment can obtain one. It still rules out the executor, whose work is
+ * frozen before this is reachable, and every party that cannot reach this plane at all.
+ *
+ * Deleting first is the point: a re-issue invalidates the previous set rather than adding a second
+ * valid one. The caller decides when it is allowed and writes it to the history.
+ */
+export function reissueCaptureCapabilities(
+  database: Database,
+  workflowId: string,
+  candidateId: string,
+  now: number,
+  roles: readonly CapturingRole[] = CAPTURING_ROLES,
+): CaptureCapability[] {
+  // Only the named roles, so a re-issue for one role cannot invalidate a secret another role is
+  // still holding. Re-issuing the whole set took away the token of the role that had not lost
+  // anything, and a run that already held one for it then could not spend it.
+  for (const role of roles) {
+    database.run(
+      "delete from capture_capabilities where candidate_id = ? and role = ?",
+      candidateId,
+      role,
+    )
+  }
+  return issueCaptureCapabilities(database, workflowId, candidateId, now, roles)
+}
+
+/**
+ * The roles whose capability for this candidate has already been spent. A spent one means a flow was
+ * driven and recorded, and that role must not be given a second secret for the same candidate — but
+ * the roles that spent nothing are exactly the ones a lost reply leaves stranded, so they are told
+ * apart rather than lumped together.
+ */
+export function spentCaptureRoles(database: Database, candidateId: string): CapturingRole[] {
+  return database
+    .all<Row>(
+      "select role from capture_capabilities where candidate_id = ? and consumed_at is not null",
+      candidateId,
+    )
+    .map((row) => row["role"] as CapturingRole)
 }
 
 export type Redemption =
@@ -105,9 +156,10 @@ export function issueReviewCapabilities(
   workflowId: string,
   candidateId: string,
   now: number,
+  roles: readonly CapturingRole[] = CAPTURING_ROLES,
 ): CaptureCapability[] {
   const issued: CaptureCapability[] = []
-  for (const role of CAPTURING_ROLES) {
+  for (const role of roles) {
     const existing = database.get<Row>(
       "select digest from review_capabilities where candidate_id = ? and role = ?",
       candidateId,
@@ -172,9 +224,16 @@ export function reissueReviewCapabilities(
   workflowId: string,
   candidateId: string,
   now: number,
+  roles: readonly CapturingRole[] = CAPTURING_ROLES,
 ): CaptureCapability[] {
-  database.run("delete from review_capabilities where candidate_id = ?", candidateId)
-  return issueReviewCapabilities(database, workflowId, candidateId, now)
+  for (const role of roles) {
+    database.run(
+      "delete from review_capabilities where candidate_id = ? and role = ?",
+      candidateId,
+      role,
+    )
+  }
+  return issueReviewCapabilities(database, workflowId, candidateId, now, roles)
 }
 
 /** Spends the secret. Called once the verdict has parsed, so a refusal costs nothing. */

@@ -1,11 +1,14 @@
 import { release } from "../admission.ts"
 import {
+  CAPTURING_ROLES,
   consumeReviewCapability,
   issueCaptureCapabilities,
   issueReviewCapabilities,
   lookupReviewCapability,
   redeemCaptureCapability,
+  reissueCaptureCapabilities,
   reissueReviewCapabilities,
+  spentCaptureRoles,
 } from "../store/capabilities.ts"
 import { ROLES, type Configuration } from "../config.ts"
 import { resolveRole } from "../roles.ts"
@@ -566,6 +569,26 @@ export function freezeCandidate(
 ): unknown {
   const workflow = load(context, workflowId)
   const candidateId = newId()
+
+  // The machine answers first, because it decides whether a freeze is possible at all: a cancelled
+  // workflow, or one already past execution, is turned away for what it is and not for the state of
+  // tasks that stopped mattering. `apply` is pure, so this asks the question without answering it.
+  apply(workflow, { candidateId, type: "candidate_ready" })
+
+  // Then: nothing is frozen over work the plan still expects. A run whose executor never got its
+  // report through froze anyway, and the candidate passed four mandatory gates and reached a
+  // reviewer with its only task still `pending`. The gates measure the tree, and the tree looked
+  // finished — what was missing was any record that the work had been carried out as authorised.
+  // Both routes have tasks: the quick one is given a single scoped task when it is routed.
+  const unfinished = loadTasks(context.database, workflowId).filter((task) => task.state !== "completed")
+  if (unfinished.length > 0) {
+    throw new WorkflowError(
+      `the plan's tasks are not finished, so there is nothing to freeze: ` +
+        `${unfinished.map((task) => `${task.key} is ${task.state}`).join(", ")}. Report each task, ` +
+        "and repair the ones that cannot be completed.",
+    )
+  }
+
   const candidateDigest = recordCandidate(context.database, workflowId, candidateId, captured, now)
   const next = transition(context, workflow, { candidateId, type: "candidate_ready" }, now)
 
@@ -925,21 +948,67 @@ export function reissueReviews(context: ServiceContext, workflowId: string, now 
   }
   const candidateId = requireCandidate(workflow)
 
-  const recorded = loadReviews(context.database, candidateId)
-  if (recorded.length > 0) {
+  // Per role, not all or nothing. Refusing the whole re-issue as soon as one verdict existed left a
+  // run that had lost only the second reviewer's secret with no way to obtain it: one review in, the
+  // other impossible, the cycle unable to close. A role that has already reviewed is excluded
+  // instead — it needs nothing, and `submitReview` refuses a second verdict from it anyway.
+  const reviewed = new Set(loadReviews(context.database, candidateId).map((entry) => entry.role))
+  const outstanding = CAPTURING_ROLES.filter((role) => !reviewed.has(role))
+  if (outstanding.length === 0) {
     throw new WorkflowError(
-      `a review by the ${recorded.map((entry) => entry.role).join(" and ")} is already recorded for ` +
-        "this candidate, so the capabilities are not re-issued. A candidate that needs a different " +
-        "verdict is repaired and frozen again.",
+      `both reviews are already recorded for this candidate, so there is no capability left to ` +
+        "issue. A candidate that needs a different verdict is repaired and frozen again.",
     )
   }
 
-  const issued = reissueReviewCapabilities(context.database, workflowId, candidateId, now)
+  const issued = reissueReviewCapabilities(context.database, workflowId, candidateId, now, outstanding)
   record(context, workflowId, "review.capabilities.reissued", {
     candidate: candidateId,
     roles: issued.map((entry) => entry.role).join(", "),
   })
   return { reviewCapabilities: issued }
+}
+
+/**
+ * A fresh set of capture capabilities for the candidate under verification.
+ *
+ * Same cause as `reissueReviews` — a run that never saw the freeze reply holds no secret — and a
+ * worse consequence. The interface layer is proved by a flow a reviewer drove and spent its
+ * capability on, so a run without one cannot satisfy that gate at all: the candidate failed
+ * verification, went to repair, was frozen again, and lost the reply again often enough that the
+ * cycle never closed. Nothing about the work was wrong.
+ *
+ * Bounded to verification, which is where the interface pass runs, and refused once a capability has
+ * been spent: the flow that one proved stands, and a second set would let it be driven again under a
+ * fresh secret. Appended to the history, so a re-issue is read in the record rather than inferred.
+ */
+export function reissueCaptures(context: ServiceContext, workflowId: string, now = Date.now()): unknown {
+  const workflow = load(context, workflowId)
+  if (workflow.state !== "verification") {
+    throw new WorkflowError(
+      `capture capabilities are re-issued while the candidate is verified, not in ${workflow.state}`,
+    )
+  }
+  const candidateId = requireCandidate(workflow)
+
+  // Per role, for the same reason as the reviews: a flow one role already drove stands, and that
+  // role gets nothing new — but the other role is exactly the one a lost reply strands, and refusing
+  // it too would make one spent capability enough to block the whole candidate.
+  const spent = new Set(spentCaptureRoles(context.database, candidateId))
+  const outstanding = CAPTURING_ROLES.filter((role) => !spent.has(role))
+  if (outstanding.length === 0) {
+    throw new WorkflowError(
+      "every capture capability for this candidate has already been spent, so there is none left to " +
+        "issue. A candidate that needs a different flow driven is repaired and frozen again.",
+    )
+  }
+
+  const issued = reissueCaptureCapabilities(context.database, workflowId, candidateId, now, outstanding)
+  record(context, workflowId, "capture.capabilities.reissued", {
+    candidate: candidateId,
+    roles: issued.map((entry) => entry.role).join(", "),
+  })
+  return { captureCapabilities: issued }
 }
 
 export function submitReviewVerdict(

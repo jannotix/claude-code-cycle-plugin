@@ -24,9 +24,11 @@ import { latestCheckpoint, verifyCheckpoints } from "../src/store/checkpoints.ts
 import { lastEvent } from "../src/store/history.ts"
 import {
   arbitrate,
+  declareScope,
   deliverCandidate,
   freezeCandidate,
   reconcile,
+  reportTask,
   startWorkflow,
   verifyCandidate,
   type ServiceContext,
@@ -86,11 +88,13 @@ async function frozen(item: Fixture): Promise<{ candidateId: string; workflowId:
   const started = startWorkflow(item.ctx, "change the fixture", [], "quick") as {
     workflowId: string
   }
-  const result = freezeCandidate(
-    item.ctx,
-    started.workflowId,
-    await captureCandidate(item.root),
-  ) as { candidateId: string }
+  // A quick run declares its scope and reports its one task before anything is frozen. The fixture
+  // skipped both, which a freeze no longer allows: nothing is frozen over a task still pending.
+  const captured = await captureCandidate(item.root)
+  const changed = captured.manifest.files.map((file) => file.path)
+  declareScope(item.ctx, started.workflowId, changed.length > 0 ? changed : ["src"])
+  reportTask(item.ctx, started.workflowId, "task-1", "completed", "the fixture's change", changed)
+  const result = freezeCandidate(item.ctx, started.workflowId, captured) as { candidateId: string }
   return { candidateId: result.candidateId, workflowId: started.workflowId }
 }
 

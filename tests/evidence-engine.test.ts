@@ -15,7 +15,9 @@ import { Database } from "../src/store/database.ts"
 import { loadEvidence, type StoredEvidence } from "../src/store/evidence.ts"
 import { replaceFile } from "../src/store/graph.ts"
 import {
+  declareScope,
   freezeCandidate,
+  reportTask,
   startWorkflow,
   submitBrowserEvidence,
   type ServiceContext,
@@ -78,7 +80,15 @@ async function freeze(item: Fixture): Promise<string> {
   const started = startWorkflow(item.ctx, "change the fixture", [], "quick") as {
     workflowId: string
   }
-  const frozen = freezeCandidate(item.ctx, started.workflowId, await captureCandidate(item.root)) as {
+  // The steps a quick run actually takes before a freeze: the scope is declared, and the task is
+  // reported against what the worktree says it wrote. The fixture used to skip both and freeze
+  // directly, which is no longer possible — a candidate is not frozen over an unfinished task —
+  // and skipping them was never what a run does.
+  const captured = await captureCandidate(item.root)
+  const changed = captured.manifest.files.map((file) => file.path)
+  declareScope(item.ctx, started.workflowId, changed.length > 0 ? changed : ["src"])
+  reportTask(item.ctx, started.workflowId, "task-1", "completed", "the fixture's change", changed)
+  const frozen = freezeCandidate(item.ctx, started.workflowId, captured) as {
     captureCapabilities: { role: string; token: string }[]
   }
   const functional = frozen.captureCapabilities.find((entry) => entry.role === "functional_reviewer")

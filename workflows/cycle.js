@@ -86,7 +86,30 @@ const preference = input.preference ?? 'auto'
 // second one. The others read and change nothing.
 // Pure reads: repeating one costs a call and changes nothing. `evidence` belongs here and did not,
 // so a lost reply became an empty evidence list instead of a second attempt.
-const RETRYABLE = new Set(['evidence', 'recall', 'start', 'status'])
+// The two re-issues are here for a reason worth stating: each one invalidates the set before it, and
+// the plane keeps only digests, so it cannot hand the same secret back. A re-issue whose reply is
+// lost is therefore strictly worse than none — it burns the recovery it was performing, and the run
+// pauses holding nothing while the plane holds a set nobody can spend. Seen in a certification run:
+// re-issued, lost, paused, resumed, re-issued again, and one review of two ever landed. Sending it
+// again is safe precisely because it supersedes: only the last reply's tokens are valid, and the
+// retry happens only when the first attempt came back with nothing at all.
+const RETRYABLE = new Set([
+  'capture_capabilities',
+  'evidence',
+  'recall',
+  'review_capabilities',
+  'start',
+  'status',
+])
+
+/**
+ * Where a candidate stands once verification passed: with the reviewers on the full route, with the
+ * arbiter on the quick one. Read only when the reply to `verify` was lost, to tell a verification
+ * that passed from one that failed — a failed one leaves the workflow in `repair`, and one whose
+ * call never arrived leaves it in `verification`. The three are indistinguishable from the reply
+ * alone, which is how a passed candidate was sent to a repair the plane would not fund.
+ */
+const PAST_VERIFICATION = new Set(['arbitration', 'independent_reviews'])
 
 /** Capture capabilities by role, held only long enough to hand each to the role it was issued to. */
 const capabilities = {}
@@ -583,11 +606,21 @@ Request: ${request}`,
       const done = await role('executor', executorPrompt(request, task, nearby, tasks, refused), 'Execution', EXECUTION)
       if (!done) return providerUnavailable('executor', 'Execution')
       if (done.browser) captured = done.browser
-      outcome = await control(
-        `{"operation":"report_task","workflowId":${JSON.stringify(id)},"taskKey":${JSON.stringify(task.key)},"status":${JSON.stringify(done?.status ?? 'blocked')},"summary":${JSON.stringify(done?.summary ?? '')}}`,
-        'Execution',
-      )
-      if (done?.status !== 'completed') break
+      const reportCall =
+        `{"operation":"report_task","workflowId":${JSON.stringify(id)},"taskKey":${JSON.stringify(task.key)},` +
+        `"status":${JSON.stringify(done?.status ?? 'blocked')},"summary":${JSON.stringify(done?.summary ?? '')}}`
+      outcome = await control(reportCall, 'Execution')
+
+      // Every accepted report comes back with what remains. Its absence means the reply was lost on
+      // the way home, and the plane is still holding a task nobody said was finished — which the
+      // freeze now refuses, rightly and for a reason that has nothing to do with the work. Sending
+      // the same report again is that report, not a second one: same task, same status, and a plane
+      // that already recorded it records nothing new.
+      if (done.status === 'completed' && outcome?.remaining === undefined) {
+        log(`the report for ${task.key} did not come back; sending it again`)
+        outcome = await control(reportCall, 'Execution')
+      }
+      if (done.status !== 'completed') break
     }
   }
 
@@ -635,27 +668,64 @@ Request: ${request}`,
     const interfaceGates = (dry?.failedGates ?? []).filter(
       (gate) => gate.startsWith('browser:') || gate.startsWith('accessibility:'),
     )
-    if (interfaceGates.length > 0 && capabilities.functional_reviewer) {
+    if (interfaceGates.length > 0) {
       log(`the interface layer is unproven: ${interfaceGates.join(', ')}`)
-      // The reviewer submits what it captured itself, spending the capability issued to it. The run
-      // relaying the capture would prove only that the run held the secret, which is not the
-      // question the gate asks.
-      const drove = await role(
-        'functional-reviewer',
-        interfacePrompt(request, id, capabilities.functional_reviewer),
-        'Verification',
-        CAPTURE,
-      )
-      // A reviewer that cannot drive the flow says so and the gate stays failed. That is the right
-      // outcome and not a reason to stop: an interface layer nobody could exercise is a finding.
-      if (drove?.captured !== true) {
-        log(`the affected flow was not driven: ${drove?.summary ?? 'no answer from the reviewer'}`)
+      // Holding no capability means the freeze reply was lost on the way back, or this run resumed
+      // and never saw one. The gate cannot be satisfied without it, and the candidate cannot be
+      // frozen a second time — the machine refuses `candidate_ready` outside execution — so a run
+      // that skipped the pass here failed verification for a reason that had nothing to do with the
+      // work, repaired, froze again, and could lose the reply again. The plane re-issues, bounded to
+      // verification and refused once one has been spent, and writes that it did.
+      if (!capabilities.functional_reviewer) {
+        log('no capture capability held for the functional reviewer; asking the plane to re-issue')
+        const reissued = await control(
+          `{"operation":"capture_capabilities","workflowId":${JSON.stringify(id)}}`,
+          'Verification',
+        )
+        for (const issued of reissued?.captureCapabilities ?? []) capabilities[issued.role] = issued.token
+      }
+
+      if (!capabilities.functional_reviewer) {
+        // The plane refused, which it does once a capability for this candidate has been spent. The
+        // gate stays failed and the run says why, rather than skipping the pass in silence and
+        // leaving a mandatory gate to fail with no reason anyone can read.
+        log('the plane would not issue a capture capability; the interface layer stays unproven')
+      } else {
+        // The reviewer submits what it captured itself, spending the capability issued to it. The run
+        // relaying the capture would prove only that the run held the secret, which is not the
+        // question the gate asks.
+        const drove = await role(
+          'functional-reviewer',
+          interfacePrompt(request, id, capabilities.functional_reviewer),
+          'Verification',
+          CAPTURE,
+        )
+        // A reviewer that cannot drive the flow says so and the gate stays failed. That is the right
+        // outcome and not a reason to stop: an interface layer nobody could exercise is a finding.
+        if (drove?.captured !== true) {
+          log(`the affected flow was not driven: ${drove?.summary ?? 'no answer from the reviewer'}`)
+        }
       }
     }
 
     outcome = await control(`{"operation":"verify","workflowId":${JSON.stringify(id)}}`, 'Verification')
 
-    if (outcome?.mandatoryPassed !== true) {
+    // A reply that did not survive the relay is not a failed verification, and reading it as one
+    // ended a run whose gates had just passed: `mandatoryPassed` was missing rather than false, the
+    // repair budget was untouched so `beginRepair` refused, and the script stopped at a stage the
+    // plane had already left. Every resume then repeated it.
+    //
+    // The plane's own state says which of three things happened, and the confirmation read that
+    // follows every mutating call already carries it. Still in verification: the call never landed,
+    // and the plane will accept it again. Past verification: it passed, whatever came back. In
+    // repair: it failed, and the branch below is the right one.
+    if (outcome?.mandatoryPassed === undefined && outcome?.state === 'verification') {
+      log('the verification reply was lost and the candidate is still under verification; asking again')
+      outcome = await control(`{"operation":"verify","workflowId":${JSON.stringify(id)}}`, 'Verification')
+    }
+    const verified = outcome?.mandatoryPassed === true || PAST_VERIFICATION.has(outcome?.state)
+
+    if (!verified) {
       log(`verification did not pass: ${outcome?.reason ?? 'unknown'}`)
       const next = await beginRepair(outcome)
       if (next === null) return { outcome, stoppedAt: 'verification' }

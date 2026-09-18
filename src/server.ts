@@ -53,6 +53,7 @@ import {
   reportTask,
   startWorkflow,
   submitPlan,
+  reissueCaptures,
   reissueReviews,
   submitBrowserEvidence,
   submitReviewVerdict,
@@ -372,6 +373,7 @@ const WORKFLOW_OPERATIONS = [
   "report_task",
   "freeze_candidate",
   "verify",
+  "capture_capabilities",
   "review_capabilities",
   "submit_review",
   "submit_browser_evidence",
@@ -773,6 +775,12 @@ const workflowTool: ToolDefinition = {
         if (args["dryRun"] === true) return { ...outcome, dryRun: true, state: null }
         return verifyCandidate(context, workflowId, outcome)
       }
+      case "capture_capabilities":
+        // The same recovery for the secret that proves a driven flow. A freeze whose reply was lost
+        // cannot be repeated — the candidate is past execution — so without this the interface gate
+        // could not be satisfied for that candidate at all. Bounded to verification and refused
+        // once one has been spent.
+        return reissueCaptures(context, id())
       case "review_capabilities":
         // For a run that resumed, or one behind a relay that dropped the field, and so never saw
         // the freeze reply. Bounded to reviews-open with no verdict recorded yet, and appended to

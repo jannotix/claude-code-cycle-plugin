@@ -3,6 +3,70 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-19
+
+Two architects where the route is critical, a council you can ask before the cycle starts, and a
+class of failure that had been costing whole runs: a reply that never made it back was read as a
+refusal, every time it happened.
+
+### Added
+
+- **An advisory council, in the standalone consultation and never inside the cycle.** `/cycle:council`
+  puts a question to several members, has each rank the others with the identities hidden, and a
+  chairman synthesises one answer. It advises; it does not plan, and no role spawns it — the members
+  are dispatched by the workflow, as every role already is. Configure `council_members`,
+  `council_chairman` and `council_size` (2–5).
+
+  What a council of one vendor is worth is stated by the council itself rather than left to be
+  assumed: when every seat resolves to the same model, the report opens by saying that agreement
+  between them is not corroboration.
+
+- **A second architect on critical routes, and a stop when the two disagree.** Where the route is
+  already marked critical, two architects plan the same request independently and the control plane
+  compares the write scopes they arrived at. A divergence pauses the cycle and reports what only one
+  of them thought the change would touch. The plane decides what diverged; nothing here picks a
+  better plan.
+
+### Fixed
+
+- **A lost reply was read as a refusal, and it cost whole cycles.** The workflow script cannot reach
+  the control plane, so a small operator relays each call and copies the answer back. When that relay
+  died, four different callers read the silence as a negative answer:
+
+  Verification was the expensive one. The gates had passed and the plane had already moved the
+  candidate to the reviewers — but the reply never arrived, so `mandatoryPassed` was missing rather
+  than false, which read as "verification did not pass". The repair budget was untouched, so the
+  plane refused to open a repair, and the run stopped at a stage the plane had already left. Every
+  resume repeated it. Two certification runs died this way, at model prices. The plane's own state
+  now settles which of three things happened, and the confirmation read that follows every mutating
+  call already carried the answer.
+
+  A freeze whose reply was lost left its capture capabilities minted and unreachable, and a candidate
+  cannot be frozen twice. `capture_capabilities` re-issues them, the twin of `review_capabilities`,
+  bounded to verification and refused for a role that has already spent one.
+
+  Both re-issues are now re-sent when their own reply is lost. Each invalidates the set before it and
+  the plane keeps only digests, so a lost re-issue reply used to burn the recovery it was performing:
+  the run paused holding nothing while the plane held a set nobody could spend.
+
+  And a re-issue is per role. Refusing the whole set as soon as one verdict existed left a run that
+  had lost only the second reviewer's secret with no way to obtain it — one review in, the other
+  impossible, the cycle unable to close, with nothing wrong with the work.
+
+- **The operator spent its turns looking for a tool it already had.** The control-plane tool was
+  deferred, so the operator had to load it before calling it, and agents burned every turn they had
+  re-issuing the same search — on the small model and on the session model alike, once after the call
+  they were sent to make had already been applied. The agent now names its tools, which puts the tool
+  in front of it on the first turn. Its system prompt drops from 456 KB to 69 KB, which is also money
+  on every control call a cycle makes.
+
+- **A candidate could be frozen over a task nobody had reported.** The executor's report never
+  reached the plane, the run froze anyway, and the candidate passed four mandatory gates and was
+  approved by a reviewer with its only task still `pending`. The gates measure the tree and the tree
+  looked finished; nothing in the record said the work had been carried out as authorised. Nothing is
+  frozen over unfinished work now, and a report that does not come back is sent again rather than
+  walked past.
+
 ## [1.0.25] - 2026-09-17
 
 An external review of the control plane found five defects. Four of them let something through that

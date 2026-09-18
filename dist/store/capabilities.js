@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { DIGEST_DOMAIN, digest } from "./ids.js";
 export const CAPTURING_ROLES = ["functional_reviewer", "security_reviewer"];
-export function issueCaptureCapabilities(database, workflowId, candidateId, now) {
+export function issueCaptureCapabilities(database, workflowId, candidateId, now, roles = CAPTURING_ROLES) {
     const issued = [];
-    for (const role of CAPTURING_ROLES) {
+    for (const role of roles) {
         const existing = database.get("select digest from capture_capabilities where candidate_id = ? and role = ?", candidateId, role);
         if (existing !== undefined)
             continue;
@@ -13,6 +13,17 @@ export function issueCaptureCapabilities(database, workflowId, candidateId, now)
         issued.push({ role, token });
     }
     return issued;
+}
+export function reissueCaptureCapabilities(database, workflowId, candidateId, now, roles = CAPTURING_ROLES) {
+    for (const role of roles) {
+        database.run("delete from capture_capabilities where candidate_id = ? and role = ?", candidateId, role);
+    }
+    return issueCaptureCapabilities(database, workflowId, candidateId, now, roles);
+}
+export function spentCaptureRoles(database, candidateId) {
+    return database
+        .all("select role from capture_capabilities where candidate_id = ? and consumed_at is not null", candidateId)
+        .map((row) => row["role"]);
 }
 export function redeemCaptureCapability(database, candidateId, token, now) {
     const row = database.get("select candidate_id, consumed_at, role from capture_capabilities where digest = ?", digest(DIGEST_DOMAIN.captureCapability, token));
@@ -25,9 +36,9 @@ export function redeemCaptureCapability(database, candidateId, token, now) {
     database.run("update capture_capabilities set consumed_at = ? where digest = ?", now, digest(DIGEST_DOMAIN.captureCapability, token));
     return { reason: null, role: row["role"] };
 }
-export function issueReviewCapabilities(database, workflowId, candidateId, now) {
+export function issueReviewCapabilities(database, workflowId, candidateId, now, roles = CAPTURING_ROLES) {
     const issued = [];
-    for (const role of CAPTURING_ROLES) {
+    for (const role of roles) {
         const existing = database.get("select digest from review_capabilities where candidate_id = ? and role = ?", candidateId, role);
         if (existing !== undefined)
             continue;
@@ -48,9 +59,11 @@ export function lookupReviewCapability(database, candidateId, token) {
         return { reason: "consumed", role: null };
     return { reason: null, role: row["role"] };
 }
-export function reissueReviewCapabilities(database, workflowId, candidateId, now) {
-    database.run("delete from review_capabilities where candidate_id = ?", candidateId);
-    return issueReviewCapabilities(database, workflowId, candidateId, now);
+export function reissueReviewCapabilities(database, workflowId, candidateId, now, roles = CAPTURING_ROLES) {
+    for (const role of roles) {
+        database.run("delete from review_capabilities where candidate_id = ? and role = ?", candidateId, role);
+    }
+    return issueReviewCapabilities(database, workflowId, candidateId, now, roles);
 }
 export function consumeReviewCapability(database, token, now) {
     database.run("update review_capabilities set consumed_at = ? where digest = ?", now, digest(DIGEST_DOMAIN.reviewCapability, token));

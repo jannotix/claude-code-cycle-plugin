@@ -20,7 +20,7 @@ import { Runtime } from "./runtime.js";
 import { graphSize } from "./store/graph.js";
 import { appendHistory } from "./store/history.js";
 import { pruneCandidateBytes, storeUsage } from "./store/retention.js";
-import { arbitrate, candidateEvidence, comparePlan, exportState, control, deliverCandidate, historyState, mandatoryGatesPassed, recallForRequest, reconcile, declareScope, freezeCandidate, reportTask, startWorkflow, submitPlan, reissueReviews, submitBrowserEvidence, submitReviewVerdict, submitSecurityProof, verificationInputs, verifyCandidate, workflowStatus, } from "./workflow/service.js";
+import { arbitrate, candidateEvidence, comparePlan, exportState, control, deliverCandidate, historyState, mandatoryGatesPassed, recallForRequest, reconcile, declareScope, freezeCandidate, reportTask, startWorkflow, submitPlan, reissueCaptures, reissueReviews, submitBrowserEvidence, submitReviewVerdict, submitSecurityProof, verificationInputs, verifyCandidate, workflowStatus, } from "./workflow/service.js";
 const VERSION = manifestVersion();
 function manifestVersion() {
     try {
@@ -269,6 +269,7 @@ const WORKFLOW_OPERATIONS = [
     "report_task",
     "freeze_candidate",
     "verify",
+    "capture_capabilities",
     "review_capabilities",
     "submit_review",
     "submit_browser_evidence",
@@ -594,6 +595,8 @@ const workflowTool = {
                     return { ...outcome, dryRun: true, state: null };
                 return verifyCandidate(context, workflowId, outcome);
             }
+            case "capture_capabilities":
+                return reissueCaptures(context, id());
             case "review_capabilities":
                 return reissueReviews(context, id());
             case "compare_plan":

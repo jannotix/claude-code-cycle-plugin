@@ -19,6 +19,8 @@ import {
   historyState,
   mandatoryGatesPassed,
   reconcile,
+  reissueCaptures,
+  reissueReviews,
   reportTask,
   startWorkflow,
   submitPlan,
@@ -536,6 +538,7 @@ test("failed verification sends the workflow back to repair", () => {
       workflowId: string
     }
     const id = started.workflowId
+    reportTask(ctx, id, "task-1", "completed", "done")
     freezeCandidate(ctx, id, emptyCandidate())
 
     const result = verifyCandidate(ctx, id, {
@@ -660,6 +663,7 @@ test("the quick route arbitrates without a plan", () => {
     }
     assert.equal(started.state, "quick_execution")
 
+    reportTask(ctx, started.workflowId, "task-1", "completed", "done")
     freezeCandidate(ctx, started.workflowId, emptyCandidate())
     verifyCandidate(ctx, started.workflowId, {
       evidenceIds: [],
@@ -1376,6 +1380,155 @@ test("the role a capture is credited to comes from the capability, not the calle
 
     // Spent once. A capability that survived its use would be a password shared with everyone who
     // ever saw a transcript.
+    assert.throws(() => submitBrowserEvidence(ctx, id, FLOW, security.token), /already spent/u)
+  } finally {
+    close()
+  }
+})
+
+/**
+ * A candidate is what the plan authorised, carried out and reported. Not what the worktree happens
+ * to contain.
+ *
+ * Seen in a full certification run: the executor did the work, its report never reached the plane,
+ * and the run froze anyway. The candidate passed four mandatory gates and was approved by a reviewer
+ * with its only task still `pending` — the gates measure the tree, and the tree looked finished.
+ * Nothing in the record said anyone had carried the task out.
+ */
+test("a candidate is not frozen while a task is still unreported", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "restyle the banner", [], "full") as { workflowId: string }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+
+    assert.throws(() => freezeCandidate(ctx, id, emptyCandidate()), /task-1 is pending/u)
+
+    // Reported, and the same freeze goes through: the guard is about the record, not about making
+    // the freeze harder.
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const frozen = freezeCandidate(ctx, id, emptyCandidate()) as { candidateId: string }
+    assert.match(frozen.candidateId, /[0-9a-f-]{36}/u)
+  } finally {
+    close()
+  }
+})
+
+// A cancelled workflow is turned away for being cancelled. Asked in the wrong order, the freeze
+// answered about tasks that had stopped mattering, which tells the caller to go and do work on a
+// workflow that will never accept it.
+test("a workflow that cannot freeze at all is refused for that, not for its tasks", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "restyle the banner", [], "full") as { workflowId: string }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    control(ctx, id, "cancel")
+
+    assert.throws(() => freezeCandidate(ctx, id, emptyCandidate()), /not valid/u)
+  } finally {
+    close()
+  }
+})
+
+/**
+ * One review in, the other role's secret lost. This is the shape that ended a certification run:
+ * the re-issue refused because a verdict existed, so the second reviewer could never submit, and the
+ * cycle could not close — with nothing wrong with the work or with the first review.
+ */
+test("one recorded review leaves the other role's capability re-issuable", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "add oauth login to the dashboard", ["src/auth.ts"], "full") as {
+      workflowId: string
+    }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const tokens = freezeIssuing(ctx, id)
+    citableGate(ctx, id, GATE_ID)
+    verifyCandidate(ctx, id, { evidenceIds: [GATE_ID], failedGates: [], mandatoryPassed: true, reason: "gates passed" })
+
+    submitReviewVerdict(ctx, id, APPROVAL, tokens.functional_reviewer)
+
+    const again = reissueReviews(ctx, id) as { reviewCapabilities: { role: string; token: string }[] }
+    assert.deepEqual(again.reviewCapabilities.map((entry) => entry.role), ["security_reviewer"])
+
+    // And it is a secret that works: the second verdict lands, and the cycle can go on to arbitration.
+    const recorded = submitReviewVerdict(ctx, id, APPROVAL, again.reviewCapabilities[0]!.token) as {
+      state: string
+    }
+    assert.equal(recorded.state, "arbitration")
+  } finally {
+    close()
+  }
+})
+
+// The freeze returns its secrets once. The relay that carries the reply back to the run is a model,
+// and a reply it drops leaves them minted and unreachable — while the candidate cannot be frozen
+// again, because the machine refuses `candidate_ready` outside execution. A whole run was lost to
+// this: the interface gate could not be satisfied by anyone, so verification failed for a reason
+// that had nothing to do with the work.
+test("a freeze whose reply was lost can ask for the capture capabilities again", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "restyle the banner", [], "full") as { workflowId: string }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const frozen = freezeCandidate(ctx, id, emptyCandidate()) as {
+      captureCapabilities: { role: string; token: string }[]
+    }
+    const lost = frozen.captureCapabilities.find((entry) => entry.role === "functional_reviewer")!
+
+    const again = reissueCaptures(ctx, id) as { captureCapabilities: { role: string; token: string }[] }
+    assert.deepEqual(
+      again.captureCapabilities.map((entry) => entry.role).sort(),
+      ["functional_reviewer", "security_reviewer"],
+    )
+
+    // A re-issue replaces: the set the freeze returned stops working, so a reply that was only late
+    // rather than lost cannot be spent alongside the new one.
+    assert.throws(() => submitBrowserEvidence(ctx, id, FLOW, lost.token), /not valid/u)
+
+    const fresh = again.captureCapabilities.find((entry) => entry.role === "functional_reviewer")!
+    const credited = submitBrowserEvidence(ctx, id, FLOW, fresh.token) as { capturedBy?: string }
+    assert.equal(credited.capturedBy, "functional_reviewer")
+
+    // Visible in the record. A re-issue that left no trace would be indistinguishable from a run
+    // that held its capability all along, which is the one thing a reader needs to tell apart.
+    const recorded = lastEvent(ctx.database, id, "capture.capabilities.reissued")
+    assert.equal(recorded?.metadata["roles"], "functional_reviewer, security_reviewer")
+  } finally {
+    close()
+  }
+})
+
+test("a capability already spent is not re-issued, but the role that spent nothing still gets one", () => {
+  const { close, ctx } = context()
+  try {
+    const started = startWorkflow(ctx, "restyle the banner", [], "full") as { workflowId: string }
+    const id = started.workflowId
+    submitPlan(ctx, id, PLAN)
+
+    // Before the freeze there is no candidate to prove anything about.
+    assert.throws(() => reissueCaptures(ctx, id), WorkflowError)
+
+    reportTask(ctx, id, "task-1", "completed", "done")
+    const frozen = freezeCandidate(ctx, id, emptyCandidate()) as {
+      captureCapabilities: { role: string; token: string }[]
+    }
+    const security = frozen.captureCapabilities.find((entry) => entry.role === "security_reviewer")!
+    submitBrowserEvidence(ctx, id, FLOW, security.token)
+
+    // The flow that one proved stands, and that role gets nothing new — a second secret for it would
+    // let the same candidate be driven again, which is what the capability exists to stop. The other
+    // role spent nothing, and refusing it too was enough to strand a whole cycle: one capability
+    // spent, the second reply lost, and no way for anyone to satisfy the gate.
+    const again = reissueCaptures(ctx, id) as { captureCapabilities: { role: string }[] }
+    assert.deepEqual(again.captureCapabilities.map((entry) => entry.role), ["functional_reviewer"])
+
+    // The spent one is still spent: a re-issue for the other role does not revive it.
     assert.throws(() => submitBrowserEvidence(ctx, id, FLOW, security.token), /already spent/u)
   } finally {
     close()

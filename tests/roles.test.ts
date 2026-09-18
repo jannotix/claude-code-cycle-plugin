@@ -151,6 +151,40 @@ test("every advisory agent declares away the tools that could change anything", 
   }
 })
 
+/**
+ * The operator is handed its tools by name, and the list must not contain ToolSearch.
+ *
+ * Measured rather than assumed, against the same agent under four declarations: named in an
+ * allowlist with no ToolSearch beside it, the control-plane tool is put in front of the agent and it
+ * calls it on the first turn. Add ToolSearch to that list and the tool goes back to being deferred —
+ * the agent has to find it before it can call it, and finding it is where runs were lost. Agents on
+ * haiku and on the session model alike spent every turn they had re-issuing the same search and
+ * returned nothing, once after the call they were sent to make had already been applied.
+ *
+ * The disallow list beside it changes none of that; it is there for the boundary, checked above.
+ */
+test("the operator is handed the control plane rather than sent to look for it", async () => {
+  const { readFile } = await import("node:fs/promises")
+  const { dirname, join } = await import("node:path")
+  const { fileURLToPath } = await import("node:url")
+  const agents = join(dirname(dirname(fileURLToPath(import.meta.url))), "agents")
+
+  const frontmatter = (await readFile(join(agents, "operator.md"), "utf8")).split("---")[1] ?? ""
+  const allowed = (/\btools:\s*\[([^\]]*)\]/u.exec(frontmatter)?.[1] ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+
+  assert.ok(allowed.includes("mcp__plugin_cycle_control__workflow"), "the workflow tool must be named")
+  assert.ok(allowed.includes("mcp__plugin_cycle_control__limits"), "the governor tool must be named")
+  // What the run is relayed through: an operator that cannot report is an operator that made a call
+  // nobody can read the result of.
+  assert.ok(allowed.includes("StructuredOutput"), "the operator must be able to report what it got")
+  assert.ok(
+    !allowed.includes("ToolSearch"),
+    "ToolSearch in this list defers the control-plane tool again, which is the loop this list removes",
+  )
+})
+
 // ---------------------------------------------------------------- the advisory council
 
 /**

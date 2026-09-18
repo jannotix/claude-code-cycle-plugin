@@ -1,5 +1,5 @@
 import { release } from "../admission.js";
-import { consumeReviewCapability, issueCaptureCapabilities, issueReviewCapabilities, lookupReviewCapability, redeemCaptureCapability, reissueReviewCapabilities, } from "../store/capabilities.js";
+import { CAPTURING_ROLES, consumeReviewCapability, issueCaptureCapabilities, issueReviewCapabilities, lookupReviewCapability, redeemCaptureCapability, reissueCaptureCapabilities, reissueReviewCapabilities, spentCaptureRoles, } from "../store/capabilities.js";
 import { ROLES } from "../config.js";
 import { resolveRole } from "../roles.js";
 import { advanceGoalOfWorkflow, linkStartedWorkflow } from "../goals.js";
@@ -312,6 +312,13 @@ function outOfScope(context, workflowId, key, changedPaths) {
 export function freezeCandidate(context, workflowId, captured, now = Date.now()) {
     const workflow = load(context, workflowId);
     const candidateId = newId();
+    apply(workflow, { candidateId, type: "candidate_ready" });
+    const unfinished = loadTasks(context.database, workflowId).filter((task) => task.state !== "completed");
+    if (unfinished.length > 0) {
+        throw new WorkflowError(`the plan's tasks are not finished, so there is nothing to freeze: ` +
+            `${unfinished.map((task) => `${task.key} is ${task.state}`).join(", ")}. Report each task, ` +
+            "and repair the ones that cannot be completed.");
+    }
     const candidateDigest = recordCandidate(context.database, workflowId, candidateId, captured, now);
     const next = transition(context, workflow, { candidateId, type: "candidate_ready" }, now);
     record(context, workflowId, "candidate.frozen", {
@@ -518,18 +525,37 @@ export function reissueReviews(context, workflowId, now = Date.now()) {
         throw new WorkflowError(`review capabilities are re-issued while reviews are open, not in ${workflow.state}`);
     }
     const candidateId = requireCandidate(workflow);
-    const recorded = loadReviews(context.database, candidateId);
-    if (recorded.length > 0) {
-        throw new WorkflowError(`a review by the ${recorded.map((entry) => entry.role).join(" and ")} is already recorded for ` +
-            "this candidate, so the capabilities are not re-issued. A candidate that needs a different " +
-            "verdict is repaired and frozen again.");
+    const reviewed = new Set(loadReviews(context.database, candidateId).map((entry) => entry.role));
+    const outstanding = CAPTURING_ROLES.filter((role) => !reviewed.has(role));
+    if (outstanding.length === 0) {
+        throw new WorkflowError(`both reviews are already recorded for this candidate, so there is no capability left to ` +
+            "issue. A candidate that needs a different verdict is repaired and frozen again.");
     }
-    const issued = reissueReviewCapabilities(context.database, workflowId, candidateId, now);
+    const issued = reissueReviewCapabilities(context.database, workflowId, candidateId, now, outstanding);
     record(context, workflowId, "review.capabilities.reissued", {
         candidate: candidateId,
         roles: issued.map((entry) => entry.role).join(", "),
     });
     return { reviewCapabilities: issued };
+}
+export function reissueCaptures(context, workflowId, now = Date.now()) {
+    const workflow = load(context, workflowId);
+    if (workflow.state !== "verification") {
+        throw new WorkflowError(`capture capabilities are re-issued while the candidate is verified, not in ${workflow.state}`);
+    }
+    const candidateId = requireCandidate(workflow);
+    const spent = new Set(spentCaptureRoles(context.database, candidateId));
+    const outstanding = CAPTURING_ROLES.filter((role) => !spent.has(role));
+    if (outstanding.length === 0) {
+        throw new WorkflowError("every capture capability for this candidate has already been spent, so there is none left to " +
+            "issue. A candidate that needs a different flow driven is repaired and frozen again.");
+    }
+    const issued = reissueCaptureCapabilities(context.database, workflowId, candidateId, now, outstanding);
+    record(context, workflowId, "capture.capabilities.reissued", {
+        candidate: candidateId,
+        roles: issued.map((entry) => entry.role).join(", "),
+    });
+    return { captureCapabilities: issued };
 }
 export function submitReviewVerdict(context, workflowId, raw, reviewToken, now = Date.now()) {
     const workflow = load(context, workflowId);
