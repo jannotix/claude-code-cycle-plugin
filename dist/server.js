@@ -15,12 +15,12 @@ import { describeProviders } from "./providers.js";
 import { verifyCheckpoints } from "./store/checkpoints.js";
 import { verifyHistory } from "./store/history.js";
 import { renderDoctor } from "./report.js";
-import { BOUNDARIES, CONSULTATION, resolveConsultation } from "./roles.js";
+import { BOUNDARIES, CONSULTATION, resolveConsultation, resolveCouncil } from "./roles.js";
 import { Runtime } from "./runtime.js";
 import { graphSize } from "./store/graph.js";
 import { appendHistory } from "./store/history.js";
 import { pruneCandidateBytes, storeUsage } from "./store/retention.js";
-import { arbitrate, candidateEvidence, exportState, control, deliverCandidate, historyState, mandatoryGatesPassed, recallForRequest, reconcile, declareScope, freezeCandidate, reportTask, startWorkflow, submitPlan, reissueReviews, submitBrowserEvidence, submitReviewVerdict, submitSecurityProof, verificationInputs, verifyCandidate, workflowStatus, } from "./workflow/service.js";
+import { arbitrate, candidateEvidence, comparePlan, exportState, control, deliverCandidate, historyState, mandatoryGatesPassed, recallForRequest, reconcile, declareScope, freezeCandidate, reportTask, startWorkflow, submitPlan, reissueReviews, submitBrowserEvidence, submitReviewVerdict, submitSecurityProof, verificationInputs, verifyCandidate, workflowStatus, } from "./workflow/service.js";
 const VERSION = manifestVersion();
 function manifestVersion() {
     try {
@@ -103,6 +103,30 @@ function roleWarning(model) {
     }
     return warnings.length === 0 ? null : warnings.join(" ");
 }
+const council = {
+    description: "Resolve the roster for an advisory council: several read-only architect consultations that " +
+        "answer one question independently, rank each other with identities hidden, and have one of " +
+        "them synthesise the result. Returns data only — it dispatches nothing and approves nothing. " +
+        "`members` carries one seat per answer, each with the `agent` to invoke and the `subagentModel` " +
+        "to pass (null means omit the parameter and let the seat run on the session model). `chairman` " +
+        "is the seat that synthesises. `warning` states what this particular roster cannot establish, " +
+        "and is not decoration: a council whose seats all run one model produces independent answers " +
+        "from correlated blind spots, and agreement between those is not corroboration.",
+    inputSchema: { additionalProperties: false, properties: {}, type: "object" },
+    name: "council",
+    run() {
+        const resolved = resolveCouncil(cycle.configuration);
+        return {
+            advisory: true,
+            chairman: resolved.chairman,
+            effort: resolved.effort,
+            members: resolved.members,
+            projectId: cycle.project.id,
+            spread: resolved.spread,
+            warning: resolved.warning,
+        };
+    },
+};
 const permissions = {
     description: "The immutable boundaries between the Cycle roles: what each may do, what it is denied, and " +
         "which of them may modify files. Not configurable and not advisory — the same table the " +
@@ -239,6 +263,7 @@ const WORKFLOW_OPERATIONS = [
     "start",
     "status",
     "evidence",
+    "compare_plan",
     "submit_plan",
     "declare_scope",
     "report_task",
@@ -571,6 +596,8 @@ const workflowTool = {
             }
             case "review_capabilities":
                 return reissueReviews(context, id());
+            case "compare_plan":
+                return comparePlan(context, id(), args["plan"]);
             case "submit_review":
                 return submitReviewVerdict(context, id(), args["verdict"], typeof args["reviewToken"] === "string" ? args["reviewToken"] : "");
             case "submit_browser_evidence": {
@@ -629,6 +656,7 @@ function verificationPending(database, projectId) {
 process.on("exit", () => cycle.close());
 serve({ name: "cycle-control-plane", version: VERSION }, [
     doctor,
+    council,
     roleSettings,
     permissions,
     recordEvent,

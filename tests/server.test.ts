@@ -27,6 +27,7 @@ test("every tool is advertised with a schema", async () => {
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
     [
+      "council",
       "doctor",
       "goal",
       "graph_query",

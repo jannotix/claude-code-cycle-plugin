@@ -32,7 +32,7 @@ import { describeProviders } from "./providers.ts"
 import { verifyCheckpoints } from "./store/checkpoints.ts"
 import { verifyHistory } from "./store/history.ts"
 import { renderDoctor } from "./report.ts"
-import { BOUNDARIES, CONSULTATION, resolveConsultation } from "./roles.ts"
+import { BOUNDARIES, CONSULTATION, resolveConsultation, resolveCouncil } from "./roles.ts"
 import { Runtime } from "./runtime.ts"
 import { graphSize } from "./store/graph.ts"
 import { appendHistory } from "./store/history.ts"
@@ -40,6 +40,7 @@ import { pruneCandidateBytes, storeUsage } from "./store/retention.ts"
 import {
   arbitrate,
   candidateEvidence,
+  comparePlan,
   exportState,
   control,
   deliverCandidate,
@@ -178,6 +179,32 @@ function roleWarning(model: string | null): string | null {
   }
 
   return warnings.length === 0 ? null : warnings.join(" ")
+}
+
+const council: ToolDefinition = {
+  description:
+    "Resolve the roster for an advisory council: several read-only architect consultations that " +
+    "answer one question independently, rank each other with identities hidden, and have one of " +
+    "them synthesise the result. Returns data only — it dispatches nothing and approves nothing. " +
+    "`members` carries one seat per answer, each with the `agent` to invoke and the `subagentModel` " +
+    "to pass (null means omit the parameter and let the seat run on the session model). `chairman` " +
+    "is the seat that synthesises. `warning` states what this particular roster cannot establish, " +
+    "and is not decoration: a council whose seats all run one model produces independent answers " +
+    "from correlated blind spots, and agreement between those is not corroboration.",
+  inputSchema: { additionalProperties: false, properties: {}, type: "object" },
+  name: "council",
+  run() {
+    const resolved = resolveCouncil(cycle.configuration)
+    return {
+      advisory: true,
+      chairman: resolved.chairman,
+      effort: resolved.effort,
+      members: resolved.members,
+      projectId: cycle.project.id,
+      spread: resolved.spread,
+      warning: resolved.warning,
+    }
+  },
 }
 
 const permissions: ToolDefinition = {
@@ -339,6 +366,7 @@ const WORKFLOW_OPERATIONS = [
   "start",
   "status",
   "evidence",
+  "compare_plan",
   "submit_plan",
   "declare_scope",
   "report_task",
@@ -750,6 +778,10 @@ const workflowTool: ToolDefinition = {
         // the freeze reply. Bounded to reviews-open with no verdict recorded yet, and appended to
         // the history so a re-issue is visible in the record instead of inferred from its absence.
         return reissueReviews(context, id())
+      case "compare_plan":
+        // A second architect's plan for the same request, compared rather than substituted. The
+        // plane decides what diverged, from write scopes; nothing here picks a better plan.
+        return comparePlan(context, id(), args["plan"])
       case "submit_review":
         // The role is never taken from the caller: it is read from the capability the caller spends,
         // exactly as for a captured flow. A submission that names its own role is a claim, and one
@@ -847,6 +879,7 @@ process.on("exit", () => cycle.close())
 
 serve({ name: "cycle-control-plane", version: VERSION }, [
   doctor,
+  council,
   roleSettings,
   permissions,
   recordEvent,

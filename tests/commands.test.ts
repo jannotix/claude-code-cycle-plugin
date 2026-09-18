@@ -61,6 +61,7 @@ test("every command the specification lists ships as a skill", async () => {
   const promised = [
     "architect",
     "cancel",
+    "council",
     "doctor",
     "evidence",
     "executor",

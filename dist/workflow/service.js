@@ -15,6 +15,7 @@ import { appendHistory, lastEvent, readHistory, verifyHistory } from "../store/h
 import { goalOfWorkflow } from "../store/goals.js";
 import { newId } from "../store/ids.js";
 import { activeWorkflowForRequest, createWorkflow, frozenFiles, lastRefusal, latestWorkflow, loadPlan, loadRequest, loadReviews, loadTasks, loadWorkflow, recordArbitration, recordCandidate, requestDigestOf, saveWorkflow, savePlan, setTaskState, submitReview, } from "../store/workflows.js";
+import { comparePlans } from "./divergence.js";
 import { apply, isTerminal, TransitionError } from "./machine.js";
 import { assertProjectRelative, parsePlan } from "./plan.js";
 import { route } from "./routing.js";
@@ -205,6 +206,29 @@ export function submitPlan(context, workflowId, raw, now = Date.now()) {
         requirements: plan.requirements.map((entry) => entry.id),
         state: next.state,
         tasks: plan.tasks.map((task) => ({ key: task.key, writeScopes: task.writeScopes })),
+    };
+}
+export function comparePlan(context, workflowId, raw) {
+    const workflow = load(context, workflowId);
+    const accepted = loadPlan(context.database, workflowId);
+    if (accepted === undefined || accepted === null) {
+        throw new WorkflowError("there is no accepted plan to compare against; submit one before comparing a second");
+    }
+    const second = parsePlan(raw);
+    const divergence = comparePlans(accepted, second);
+    record(context, workflowId, "architecture.compared", {
+        diverged: String(divergence.diverged),
+        only_in_first: divergence.onlyInFirst.join(", "),
+        only_in_second: divergence.onlyInSecond.join(", "),
+        shared: String(divergence.totals.shared),
+    });
+    return {
+        diverged: divergence.diverged,
+        onlyInFirst: divergence.onlyInFirst,
+        onlyInSecond: divergence.onlyInSecond,
+        state: workflow.state,
+        summary: divergence.summary,
+        totals: divergence.totals,
     };
 }
 export function reportTask(context, workflowId, key, status, summary, changedPaths = [], now = Date.now()) {

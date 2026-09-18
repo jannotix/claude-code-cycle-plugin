@@ -46,6 +46,44 @@ export function resolveConsultation(configuration, consultation) {
     const agent = CONSULTATION_AGENT[consultation];
     return agent === undefined ? resolved : { ...resolved, agent };
 }
+export function resolveCouncil(configuration) {
+    const architect = resolveRole(configuration, "architect");
+    const { chairman, members, size } = configuration.council;
+    const seat = (id, model) => ({
+        agent: ROLE_AGENT.architect,
+        id,
+        inherits: model === null,
+        model,
+        subagentModel: subagentModelFor(model),
+    });
+    const roster = members.length > 0
+        ? members.map((model, index) => seat(`member-${index + 1}`, model))
+        : Array.from({ length: size }, (_, index) => seat(`member-${index + 1}`, architect.model));
+    const distinct = new Set(roster.map((member) => member.model ?? "inherit"));
+    const spread = distinct.size > 1 ? "models" : "repeated";
+    const unreachable = roster
+        .filter((member) => member.model !== null && member.subagentModel === null)
+        .map((member) => member.model);
+    const warnings = [];
+    if (spread === "repeated") {
+        warnings.push(`every seat runs the same model, so the answers are independent but the blind spots are not: ` +
+            `agreement between them is not corroboration. Set council_models to a comma-separated list ` +
+            `to change that.`);
+    }
+    if (unreachable.length > 0) {
+        warnings.push(`the subagent tool accepts a model family, not an identifier, and nothing it accepts matches ` +
+            `${unreachable.join(", ")}; ${unreachable.length === 1 ? "that seat runs" : "those seats run"} ` +
+            `on the session model instead. The gateway path in docs/multi-provider.md is what makes a ` +
+            `third-party model reachable.`);
+    }
+    return {
+        chairman: seat("chairman", chairman ?? architect.model),
+        effort: architect.effort,
+        members: roster,
+        spread,
+        warning: warnings.length === 0 ? null : warnings.join(" "),
+    };
+}
 const READ_ONLY_TOOLS = [
     "Write",
     "Edit",

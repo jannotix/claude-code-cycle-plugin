@@ -30,6 +30,14 @@ export interface Configuration {
   readonly gateStrictness: GateStrictness
   readonly invalid: readonly string[]
   readonly maxRepairCycles: number
+  /**
+   * The advisory council: the models that answer a question independently before one of them
+   * synthesises the answers. Empty means the council runs on the architect's own model for every
+   * member, which still separates the answers but not the blind spots — the value in asking several
+   * models is that they fail differently, and several copies of one model fail the same way. The
+   * doctor reports which of the two is in force rather than leaving a reader to assume.
+   */
+  readonly council: CouncilSettings
   readonly roles: Readonly<Record<Role, RoleSettings>>
   /**
    * Whether the security reviewer may execute a proof against a copy of the candidate. Off unless
@@ -50,6 +58,18 @@ export interface Configuration {
   /** Option variables that arrived empty: present, but carrying nothing. */
   readonly blank: number
 }
+
+export interface CouncilSettings {
+  /** The model that synthesises, or null to use the architect's. */
+  readonly chairman: string | null
+  /** One entry per member. Empty when nothing was configured. */
+  readonly members: readonly string[]
+  /** Members to run when none were named, so a council is still possible without configuring one. */
+  readonly size: number
+}
+
+/** Below two there is nothing to disagree about; above five the cost stops being worth the spread. */
+const COUNCIL_SIZE = { default: 3, maximum: 5, minimum: 2 } as const
 
 const EFFORTS: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"]
 const STRICTNESS: readonly GateStrictness[] = ["advisory", "standard", "strict"]
@@ -91,7 +111,15 @@ const PREFIX = "CLAUDE_PLUGIN_OPTION_"
 export function readConfiguration(environment: NodeJS.ProcessEnv = process.env): Configuration {
   const invalid: string[] = []
   const roles = {} as Record<Role, RoleSettings>
-  const known = new Set(["DATA_DIR", "GATE_STRICTNESS", "MAX_REPAIR_CYCLES", "SECURITY_PROOFS"])
+  const known = new Set([
+    "COUNCIL_CHAIRMAN_MODEL",
+    "COUNCIL_MODELS",
+    "COUNCIL_SIZE",
+    "DATA_DIR",
+    "GATE_STRICTNESS",
+    "MAX_REPAIR_CYCLES",
+    "SECURITY_PROOFS",
+  ])
 
   for (const role of ROLES) {
     const modelKey = `${role.toUpperCase()}_MODEL`
@@ -111,6 +139,7 @@ export function readConfiguration(environment: NodeJS.ProcessEnv = process.env):
 
   return {
     blank: present.length - delivered,
+    council: readCouncil(environment, invalid),
     dataDirectory: option(environment, "DATA_DIR") || undefined,
     delivered,
     gateStrictness: readStrictness(environment, invalid),
@@ -123,6 +152,38 @@ export function readConfiguration(environment: NodeJS.ProcessEnv = process.env):
       .map((key) => key.slice(PREFIX.length))
       .sort(),
   }
+}
+
+/**
+ * The council roster. A member list is comma-separated because that is what a single option value
+ * can carry; blank entries are dropped rather than becoming a member with no model, which would be
+ * a seat at the table that answers nothing.
+ */
+function readCouncil(environment: NodeJS.ProcessEnv, invalid: string[]): CouncilSettings {
+  const members = option(environment, "COUNCIL_MODELS")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "" && entry !== INHERIT)
+
+  const chairmanRaw = option(environment, "COUNCIL_CHAIRMAN_MODEL")
+  const chairman = chairmanRaw === "" || chairmanRaw === INHERIT ? null : chairmanRaw
+
+  return { chairman, members, size: readCouncilSize(environment, invalid) }
+}
+
+function readCouncilSize(environment: NodeJS.ProcessEnv, invalid: string[]): number {
+  const raw = option(environment, "COUNCIL_SIZE")
+  if (raw === "") return COUNCIL_SIZE.default
+
+  const size = Number(raw)
+  if (!Number.isInteger(size) || size < COUNCIL_SIZE.minimum || size > COUNCIL_SIZE.maximum) {
+    invalid.push(
+      `COUNCIL_SIZE=${raw} is not a whole number between ${COUNCIL_SIZE.minimum} and ` +
+        `${COUNCIL_SIZE.maximum}; ${COUNCIL_SIZE.default} members are used`,
+    )
+    return COUNCIL_SIZE.default
+  }
+  return size
 }
 
 /** Anything that is not an explicit "on" leaves proofs off, including a value nobody recognises. */

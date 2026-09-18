@@ -108,6 +108,13 @@ invoking it directly would bypass the product.
 | `/cycle:review` | Independent functional review of work already done |
 | `/cycle:security` | Independent security and architecture review |
 | `/cycle:judge` | Readiness against your exact request, with the blockers. Never approves |
+| `/cycle:council` | One question to several architects at once: they answer independently, rank each other without knowing whose answer is whose, and one of them synthesises. For a decision worth arguing with before you commit to it |
+
+`/cycle:council` is the only one that dispatches more than one agent, and it is dispatched from the
+command rather than by a role — no Cycle role may spawn another. Configure `council_models` with a
+comma-separated list to give the seats different models. Leaving it empty runs every seat on the
+architect's model, which separates the answers but not the blind spots: the command says so before
+it reports anything, because agreement between copies of one model is not corroboration.
 
 ---
 

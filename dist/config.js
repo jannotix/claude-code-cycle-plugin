@@ -7,6 +7,7 @@ export const ROLES = [
     "operator",
 ];
 export const INHERIT = "inherit";
+const COUNCIL_SIZE = { default: 3, maximum: 5, minimum: 2 };
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const STRICTNESS = ["advisory", "standard", "strict"];
 const DEFAULT_EFFORT = {
@@ -36,7 +37,15 @@ const PREFIX = "CLAUDE_PLUGIN_OPTION_";
 export function readConfiguration(environment = process.env) {
     const invalid = [];
     const roles = {};
-    const known = new Set(["DATA_DIR", "GATE_STRICTNESS", "MAX_REPAIR_CYCLES", "SECURITY_PROOFS"]);
+    const known = new Set([
+        "COUNCIL_CHAIRMAN_MODEL",
+        "COUNCIL_MODELS",
+        "COUNCIL_SIZE",
+        "DATA_DIR",
+        "GATE_STRICTNESS",
+        "MAX_REPAIR_CYCLES",
+        "SECURITY_PROOFS",
+    ]);
     for (const role of ROLES) {
         const modelKey = `${role.toUpperCase()}_MODEL`;
         const effortKey = EFFORT_OPTION[role];
@@ -54,6 +63,7 @@ export function readConfiguration(environment = process.env) {
     const delivered = present.filter(([, value]) => (value ?? "").trim() !== "").length;
     return {
         blank: present.length - delivered,
+        council: readCouncil(environment, invalid),
         dataDirectory: option(environment, "DATA_DIR") || undefined,
         delivered,
         gateStrictness: readStrictness(environment, invalid),
@@ -66,6 +76,27 @@ export function readConfiguration(environment = process.env) {
             .map((key) => key.slice(PREFIX.length))
             .sort(),
     };
+}
+function readCouncil(environment, invalid) {
+    const members = option(environment, "COUNCIL_MODELS")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== "" && entry !== INHERIT);
+    const chairmanRaw = option(environment, "COUNCIL_CHAIRMAN_MODEL");
+    const chairman = chairmanRaw === "" || chairmanRaw === INHERIT ? null : chairmanRaw;
+    return { chairman, members, size: readCouncilSize(environment, invalid) };
+}
+function readCouncilSize(environment, invalid) {
+    const raw = option(environment, "COUNCIL_SIZE");
+    if (raw === "")
+        return COUNCIL_SIZE.default;
+    const size = Number(raw);
+    if (!Number.isInteger(size) || size < COUNCIL_SIZE.minimum || size > COUNCIL_SIZE.maximum) {
+        invalid.push(`COUNCIL_SIZE=${raw} is not a whole number between ${COUNCIL_SIZE.minimum} and ` +
+            `${COUNCIL_SIZE.maximum}; ${COUNCIL_SIZE.default} members are used`);
+        return COUNCIL_SIZE.default;
+    }
+    return size;
 }
 function readSecurityProofs(environment, invalid) {
     const raw = option(environment, "SECURITY_PROOFS").toLowerCase();

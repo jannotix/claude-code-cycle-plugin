@@ -87,6 +87,93 @@ export function resolveConsultation(
   return agent === undefined ? resolved : { ...resolved, agent }
 }
 
+export interface CouncilSeat {
+  /** Always the architect agent: a member is an ordinary read-only architect consultation. */
+  readonly agent: string
+  /** Stable across a run so answers can be anonymised and still be told apart afterwards. */
+  readonly id: string
+  readonly inherits: boolean
+  readonly model: string | null
+  readonly subagentModel: SubagentModel | null
+}
+
+export interface ResolvedCouncil {
+  readonly chairman: CouncilSeat
+  readonly effort: Effort
+  readonly members: readonly CouncilSeat[]
+  /**
+   * Whether the members actually differ. `models` means each seat was given its own; `repeated`
+   * means they all run the architect's, which separates the answers without separating what
+   * produces them.
+   */
+  readonly spread: "models" | "repeated"
+  /** What this roster cannot do, said plainly rather than left for the reader to work out. */
+  readonly warning: string | null
+}
+
+/**
+ * The advisory council: several read-only architect consultations answering the same question, then
+ * ranking each other with identities hidden, then one of them synthesising. The shape is
+ * karpathy/llm-council; what differs is who dispatches it. No Cycle role may spawn another — the
+ * boundary table below declares Agent and Task away for every one of them — so a council is
+ * dispatched by the caller, exactly as a single consultation already is. A role that could convene
+ * its own council would be a role that can spawn, and the separation of powers would have a setting.
+ *
+ * The warning is the honest part. The Agent tool reduces any model to one of four families, so a
+ * council configured with nothing reachable is several copies of one model: the answers are
+ * independent, the blind spots are not, and a reader who is not told that will read agreement
+ * between them as corroboration. It is not.
+ */
+export function resolveCouncil(configuration: Configuration): ResolvedCouncil {
+  const architect = resolveRole(configuration, "architect")
+  const { chairman, members, size } = configuration.council
+
+  const seat = (id: string, model: string | null): CouncilSeat => ({
+    agent: ROLE_AGENT.architect,
+    id,
+    inherits: model === null,
+    model,
+    subagentModel: subagentModelFor(model),
+  })
+
+  const roster =
+    members.length > 0
+      ? members.map((model, index) => seat(`member-${index + 1}`, model))
+      : Array.from({ length: size }, (_, index) => seat(`member-${index + 1}`, architect.model))
+
+  const distinct = new Set(roster.map((member) => member.model ?? "inherit"))
+  const spread = distinct.size > 1 ? "models" : "repeated"
+
+  const unreachable = roster
+    .filter((member) => member.model !== null && member.subagentModel === null)
+    .map((member) => member.model)
+
+  const warnings: string[] = []
+  if (spread === "repeated") {
+    warnings.push(
+      `every seat runs the same model, so the answers are independent but the blind spots are not: ` +
+        `agreement between them is not corroboration. Set council_models to a comma-separated list ` +
+        `to change that.`,
+    )
+  }
+  if (unreachable.length > 0) {
+    warnings.push(
+      `the subagent tool accepts a model family, not an identifier, and nothing it accepts matches ` +
+        `${unreachable.join(", ")}; ${unreachable.length === 1 ? "that seat runs" : "those seats run"} ` +
+        `on the session model instead. The gateway path in docs/multi-provider.md is what makes a ` +
+        `third-party model reachable.`,
+    )
+  }
+
+  return {
+    chairman: seat("chairman", chairman ?? architect.model),
+    effort: architect.effort,
+    members: roster,
+    spread,
+    warning: warnings.length === 0 ? null : warnings.join(" "),
+  }
+}
+
 export interface RoleBoundary {
   /** Tools the role declares away, enforced again by the PreToolUse guard. */
   readonly cannot: readonly string[]

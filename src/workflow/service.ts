@@ -51,6 +51,7 @@ import {
   submitReview,
   type StoredWorkflow,
 } from "../store/workflows.ts"
+import { comparePlans } from "./divergence.ts"
 import { apply, isTerminal, TransitionError, type WorkflowCommand } from "./machine.ts"
 import { assertProjectRelative, parsePlan, type Plan } from "./plan.ts"
 import { route, type Preference } from "./routing.ts"
@@ -366,6 +367,52 @@ export function submitPlan(
     requirements: plan.requirements.map((entry) => entry.id),
     state: next.state,
     tasks: plan.tasks.map((task) => ({ key: task.key, writeScopes: task.writeScopes })),
+  }
+}
+
+/**
+ * A second plan for the same request, compared against the one already accepted rather than
+ * replacing it.
+ *
+ * On a change `route()` already flagged as critical, the full route can dispatch two architects who
+ * cannot see each other. Two plans that touch the same areas mean the request was read the same way
+ * twice. Two that do not mean the request admits more than one reading — and that is a finding about
+ * the request, not a contest between architects. So this never picks a winner: it records what they
+ * disagreed about and lets the caller stop.
+ *
+ * The comparison is done here, by the plane, on write scopes. A model asked which plan is better
+ * would answer, and the answer would not be reproducible; a path either overlaps another path or it
+ * does not, and that is the same on every machine. The second plan is validated exactly like the
+ * first — an unparseable one is refused rather than counted as disagreement.
+ */
+export function comparePlan(context: ServiceContext, workflowId: string, raw: unknown): unknown {
+  const workflow = load(context, workflowId)
+  const accepted = loadPlan(context.database, workflowId)
+  if (accepted === undefined || accepted === null) {
+    throw new WorkflowError(
+      "there is no accepted plan to compare against; submit one before comparing a second",
+    )
+  }
+
+  const second = parsePlan(raw)
+  const divergence = comparePlans(accepted, second)
+
+  record(context, workflowId, "architecture.compared", {
+    diverged: String(divergence.diverged),
+    only_in_first: divergence.onlyInFirst.join(", "),
+    only_in_second: divergence.onlyInSecond.join(", "),
+    shared: String(divergence.totals.shared),
+  })
+
+  return {
+    diverged: divergence.diverged,
+    onlyInFirst: divergence.onlyInFirst,
+    onlyInSecond: divergence.onlyInSecond,
+    // The plan that was accepted stays accepted. Nothing here replaces it, and the state does not
+    // move: a comparison is a reading, and a reading that changed what it read would be useless.
+    state: workflow.state,
+    summary: divergence.summary,
+    totals: divergence.totals,
   }
 }
 

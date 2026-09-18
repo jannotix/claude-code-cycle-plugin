@@ -360,6 +360,20 @@ if (authoritative?.state) {
 const full = started.mode === 'full'
 
 /**
+ * Whether this change is worth a second architect.
+ *
+ * Only where `route()` already found a critical signal — authentication, payments, a migration, a
+ * change wide enough to count — and only on the full route. A second architect on every change
+ * doubles the most expensive role to learn something about requests that were never in doubt, and a
+ * cost that lands everywhere is a cost people route around.
+ *
+ * The signal is the plane's, not this script's. Recomputing "is this important" here would be a
+ * second router disagreeing with the first one eventually, and the disagreement would be silent.
+ */
+const critical = started.critical ?? []
+const secondOpinion = full && critical.length > 0
+
+/**
  * How many times this script will drive the pipeline: the first attempt, plus one per repair the
  * plane is willing to fund. The plane owns the budget — it blocks when it is spent, and
  * `beginRepair` then returns null — so this is only a stop for a loop nobody is driving.
@@ -440,18 +454,46 @@ while (cycles < rounds) {
       `{"operation":"status","workflowId":${JSON.stringify(id)}}`,
       'Architecture',
     )
-    const plan = await role(
-      'architect',
-      architectPrompt(request, memories, before?.lastRefusal ?? []),
-      'Architecture',
-      { type: 'object' },
-    )
+    // On a critical change, two architects answer the same request without being able to see each
+    // other. Dispatched together rather than one after the other: they are independent by
+    // construction, so a sequential pair costs twice the wall clock and buys nothing.
+    const prompt = architectPrompt(request, memories, before?.lastRefusal ?? [])
+    const drafts = secondOpinion
+      ? await parallel([
+          () => role('architect', prompt, 'Architecture', { type: 'object' }),
+          () => role('architect', prompt, 'Architecture', { type: 'object' }),
+        ])
+      : [await role('architect', prompt, 'Architecture', { type: 'object' })]
+
+    const plan = drafts[0]
     if (!plan) return providerUnavailable('architect', 'Architecture')
     outcome = await control(
       `{"operation":"submit_plan","workflowId":${JSON.stringify(id)},"plan":${JSON.stringify(plan)}}`,
       'Architecture',
     )
     if (outcome?.state !== 'execution') return { outcome, stoppedAt: 'architecture' }
+
+    // The second plan is compared, never substituted. The plane decides what diverged, from write
+    // scopes, because a model asked which plan is better would answer and the answer would not be
+    // reproducible. Two plans touching the same areas mean the request was read the same way twice;
+    // two that do not mean it admits more than one reading, and that is a question for the person
+    // who wrote it rather than a plan to choose between.
+    if (secondOpinion && drafts[1]) {
+      const compared = await control(
+        `{"operation":"compare_plan","workflowId":${JSON.stringify(id)},"plan":${JSON.stringify(drafts[1])}}`,
+        'Architecture',
+      )
+      if (compared?.diverged === true) {
+        log(compared.summary ?? 'two independent plans disagree about what this change touches')
+        await control(
+          `{"operation":"control","controlOperation":"pause","workflowId":${JSON.stringify(id)},"reason":${JSON.stringify(String(compared.summary ?? 'independent plans diverged').slice(0, 480))}}`,
+          'Architecture',
+        )
+        return { diverged: compared, outcome, stoppedAt: 'architecture', workflowId: id }
+      }
+      // Agreement about scope, said as exactly that. It is not evidence that either plan is right.
+      log(compared?.summary ?? 'a second architect reached the same scope')
+    }
   }
 
   let captured = null

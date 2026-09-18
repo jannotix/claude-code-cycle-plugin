@@ -49,6 +49,24 @@
       "description": "Model for the final verdict. Correlating this with the architect weakens the boundary it exists to enforce.",
       "default": "inherit"
     },
+    "council_models": {
+      "type": "string",
+      "title": "Council models",
+      "description": "Comma-separated models for the advisory council, which answers a question independently before one seat synthesises. Leave empty to run every seat on the architect's model: the answers stay independent, the blind spots do not, and agreement between them is not corroboration.",
+      "default": ""
+    },
+    "council_chairman_model": {
+      "type": "string",
+      "title": "Council chairman model",
+      "description": "Model that synthesises the council's answers. Leave empty to use the architect's.",
+      "default": ""
+    },
+    "council_size": {
+      "type": "string",
+      "title": "Council size",
+      "description": "Seats to run when council_models names none: 2 to 5. Below two there is nothing to disagree about.",
+      "default": "3"
+    },
     "operator_model": {
       "type": "string",
       "title": "Operator model",

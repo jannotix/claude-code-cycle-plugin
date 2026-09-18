@@ -3,7 +3,13 @@ import { test } from "node:test"
 
 import { readConfiguration } from "../src/config.ts"
 import { identifyProject } from "../src/project.ts"
-import { CONSULTATION, ROLE_AGENT, resolveConsultation, resolveRole } from "../src/roles.ts"
+import {
+  CONSULTATION,
+  ROLE_AGENT,
+  resolveConsultation,
+  resolveCouncil,
+  resolveRole,
+} from "../src/roles.ts"
 
 const option = (values: Record<string, string>): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(values).map(([key, value]) => [`CLAUDE_PLUGIN_OPTION_${key}`, value]))
@@ -143,4 +149,82 @@ test("every advisory agent declares away the tools that could change anything", 
       assert.ok(declared.includes(tool), `${name} must declare ${tool} as disallowed`)
     }
   }
+})
+
+// ---------------------------------------------------------------- the advisory council
+
+/**
+ * A council of one model is the case that matters, because it is the default and it is the one a
+ * reader will misread. The seats answer independently, so the answers look like corroboration; what
+ * produced them is identical, so they are not. The roster says so itself rather than leaving the
+ * reader to work it out from the model names.
+ */
+test("a council nobody configured runs on the architect model and says what that costs", () => {
+  const resolved = resolveCouncil(readConfiguration({}))
+
+  assert.equal(resolved.members.length, 3)
+  assert.equal(resolved.spread, "repeated")
+  assert.ok(resolved.members.every((seat) => seat.model === null && seat.inherits))
+  assert.match(resolved.warning ?? "", /not corroboration/u)
+})
+
+test("every seat is a read-only architect, chairman included", () => {
+  const resolved = resolveCouncil(readConfiguration(option({ COUNCIL_MODELS: "opus,sonnet" })))
+
+  for (const seat of [...resolved.members, resolved.chairman]) {
+    assert.equal(seat.agent, ROLE_AGENT.architect)
+  }
+})
+
+test("configured models give the seats their own, and the identifiers stay distinct", () => {
+  const resolved = resolveCouncil(
+    readConfiguration(option({ COUNCIL_MODELS: "opus, sonnet ,haiku" })),
+  )
+
+  assert.deepEqual(resolved.members.map((seat) => seat.model), ["opus", "sonnet", "haiku"])
+  assert.equal(new Set(resolved.members.map((seat) => seat.id)).size, 3)
+  assert.equal(resolved.spread, "models")
+  assert.equal(resolved.warning, null)
+})
+
+/**
+ * The Agent tool takes a model family and refuses an identifier, so a third-party model configured
+ * here reaches the seat as nothing and the seat runs on the session model. That is the difference
+ * between a council of several vendors and a council that looks like one, and it is reported rather
+ * than discovered later from the answers.
+ */
+test("a model the subagent tool cannot express is named, not silently dropped", () => {
+  const resolved = resolveCouncil(
+    readConfiguration(option({ COUNCIL_MODELS: "opus,gpt-5.6-codex" })),
+  )
+
+  assert.equal(resolved.members[1]?.subagentModel, null)
+  assert.match(resolved.warning ?? "", /gpt-5\.6-codex/u)
+})
+
+test("the chairman falls back to the architect model, and takes its own when given one", () => {
+  const inherited = resolveCouncil(readConfiguration(option({ ARCHITECT_MODEL: "opus" })))
+  assert.equal(inherited.chairman.model, "opus")
+
+  const named = resolveCouncil(
+    readConfiguration(option({ ARCHITECT_MODEL: "opus", COUNCIL_CHAIRMAN_MODEL: "sonnet" })),
+  )
+  assert.equal(named.chairman.model, "sonnet")
+})
+
+// Below two there is nothing to disagree about, which is the only thing a council is for.
+test("a council size outside the range is refused and reported, not clamped in silence", () => {
+  for (const size of ["1", "9", "two", "3.5"]) {
+    const configuration = readConfiguration(option({ COUNCIL_SIZE: size }))
+
+    assert.equal(resolveCouncil(configuration).members.length, 3, size)
+    assert.ok(
+      configuration.invalid.some((line) => line.includes("COUNCIL_SIZE")),
+      `${size} was rejected without saying so`,
+    )
+  }
+})
+
+test("a size inside the range is honoured", () => {
+  assert.equal(resolveCouncil(readConfiguration(option({ COUNCIL_SIZE: "5" }))).members.length, 5)
 })
