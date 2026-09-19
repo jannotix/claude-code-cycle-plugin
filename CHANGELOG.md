@@ -3,6 +3,18 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-09-19
+
+### Fixed
+
+- **The architect's consultation did not say it was advice.** The prompt told the architect that its
+  answer approves nothing; it never asked it to say so. Two of the four other consultations carry
+  that line in their answers because their own prompts state it and the answers repeat it, and the
+  judge is asked outright — the architect passed or failed on phrasing. An architect that replies
+  with clarifying questions, which its prompt explicitly invites, produced a plan-shaped answer with
+  nothing marking it as advice, and a reader who takes an advisory answer for an approved plan is the
+  failure this row exists to catch. It is asked for now, alongside the pointer to `/cycle:run`.
+
 ## [1.1.0] - 2026-09-19
 
 Two architects where the route is critical, a council you can ask before the cycle starts, and a

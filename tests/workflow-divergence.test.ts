@@ -1,3 +1,7 @@
+// Certification 6.18: a second architect's plan is compared against the first and never substituted
+// for it. What the plane decides is what diverged, read from the write scopes the two arrived at;
+// nothing here picks a better plan, and agreement is never reported as proof that either is right.
+
 import assert from "node:assert/strict"
 import { test } from "node:test"
 

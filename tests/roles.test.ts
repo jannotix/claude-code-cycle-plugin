@@ -187,6 +187,8 @@ test("the operator is handed the control plane rather than sent to look for it",
 
 // ---------------------------------------------------------------- the advisory council
 
+// Certification 3.14.
+
 /**
  * A council of one model is the case that matters, because it is the default and it is the one a
  * reader will misread. The seats answer independently, so the answers look like corroboration; what
