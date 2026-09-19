@@ -764,17 +764,32 @@ Request: ${request}`,
 
   if (full && from <= RANK.independent_reviews) {
     phase('Review')
-    const reviews = await parallel([
-      () =>
+    const dispatch = {
+      functional_reviewer: () =>
         role(
           'functional-reviewer',
           reviewPrompt(request, 'completeness', evidence, requirements, capabilities.functional_reviewer),
           'Review',
           VERDICT,
         ),
-      () => role('security-reviewer', securityPrompt(request, evidence, id, requirements), 'Review', VERDICT),
-    ])
-    const roles = ['functional_reviewer', 'security_reviewer']
+      security_reviewer: () =>
+        role('security-reviewer', securityPrompt(request, evidence, id, requirements), 'Review', VERDICT),
+    }
+
+    // Only the roles the plane does not already have a verdict from.
+    //
+    // A resumed run re-enters this phase with reviews already recorded, and asking a role that has
+    // answered costs a review nobody needs and then ends the cycle: the plane will not issue a second
+    // capability to a role that has spent its verdict — correctly, that is the whole mechanism — and
+    // the run read that refusal as its own failure and paused itself. It did it again on every
+    // resume, three times, holding one review of two. Nothing was wrong with the work or the review.
+    const already = new Set(reviewsForArbiter.map((entry) => entry.role))
+    const roles = ['functional_reviewer', 'security_reviewer'].filter((name) => !already.has(name))
+    if (already.size > 0) {
+      log(`already recorded by ${[...already].join(' and ')}; asking ${roles.join(' and ') || 'nobody'}`)
+    }
+
+    const reviews = await parallel(roles.map((name) => dispatch[name]))
     for (const [index, verdict] of reviews.entries()) {
       if (!verdict) return providerUnavailable(roles[index].replace('_', ' '), 'Review')
       // A run that resumed after a restart never saw the freeze reply, and neither does one behind
@@ -807,21 +822,39 @@ Request: ${request}`,
         'Review',
       )
     }
-    reviewsForArbiter = reviews.map((verdict, index) => ({ role: roles[index], ...verdict }))
+    // Added to what the plane already held, not substituted for it. Replacing the list handed the
+    // arbiter only the verdicts this process produced, so a resumed run that submitted the one
+    // missing review would have sent the arbiter in holding one of two — and the arbiter judges what
+    // it is shown.
+    reviewsForArbiter = [
+      ...reviewsForArbiter,
+      ...reviews.map((verdict, index) => ({ role: roles[index], ...verdict })),
+    ]
   }
 
   phase('Arbitration')
-  const verdict = await role(
-    'arbiter',
-    arbiterPrompt(request, evidence, requirements, reviewsForArbiter),
-    'Arbitration',
-    VERDICT,
-  )
-  if (!verdict) return providerUnavailable('arbiter', 'Arbitration')
-  outcome = await control(
-    `{"operation":"arbitrate","workflowId":${JSON.stringify(id)},"verdict":${JSON.stringify(verdict)}}`,
-    'Arbitration',
-  )
+  // A run resumed past arbitration already has its verdict on the plane: the arbiter has spoken and
+  // the plane is waiting to be told to promote. Asking for another one spends a role on a call the
+  // plane refuses in that state. What it does not do is lose the delivery — the confirmation read
+  // that follows every mutating call reports `delivery` and the branch below still fires — so this
+  // is about not paying an arbiter to be refused, and about the record not carrying a refusal that
+  // says nothing happened. Where the candidate stands is read instead.
+  if (from <= RANK.arbitration) {
+    const verdict = await role(
+      'arbiter',
+      arbiterPrompt(request, evidence, requirements, reviewsForArbiter),
+      'Arbitration',
+      VERDICT,
+    )
+    if (!verdict) return providerUnavailable('arbiter', 'Arbitration')
+    outcome = await control(
+      `{"operation":"arbitrate","workflowId":${JSON.stringify(id)},"verdict":${JSON.stringify(verdict)}}`,
+      'Arbitration',
+    )
+  } else {
+    log('resumed past arbitration; reading where the candidate stands rather than judging it again')
+    outcome = await control(`{"operation":"status","workflowId":${JSON.stringify(id)}}`, 'Arbitration')
+  }
 
   if (outcome?.state === 'delivery') {
     // Promotion writes the approved bytes and re-verifies them. It refuses if anything moved

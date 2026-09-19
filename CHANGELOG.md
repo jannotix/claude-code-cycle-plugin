@@ -3,6 +3,28 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-09-19
+
+### Fixed
+
+- **A resumed cycle asked a reviewer that had already answered, and stopped itself.** 1.1.2 taught the
+  control plane to re-issue a review capability for the role that still owed a verdict, and left the
+  run asking for both. So a resume re-dispatched the reviewer whose verdict was already recorded, the
+  plane refused it a second capability — correctly, that refusal is the whole mechanism — and the run
+  read the refusal as its own failure and paused. It did the same on every resume after that, holding
+  one review of two, with nothing wrong with the work, the review, or the plane.
+
+  The run now asks only the roles the plane does not already have a verdict from, and hands the
+  arbiter every recorded review rather than only the ones the current process produced. A resumed run
+  used to replace that list, so an arbiter could be sent in holding one review of two.
+
+- **A cycle resumed after arbitration paid for a second verdict it could not use.** The approval was
+  already recorded and the plane was waiting to be told to promote; the run dispatched an arbiter
+  anyway and had the call refused for being in the wrong state. The delivery still happened, because
+  the confirmation read that follows every mutating call reports where the candidate stands — so this
+  is about not spending a role to be refused, and about the history not carrying a refusal that
+  describes nothing.
+
 ## [1.1.2] - 2026-09-19
 
 ### Fixed

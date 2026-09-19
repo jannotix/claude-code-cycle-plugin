@@ -13,8 +13,8 @@
       "name": "cycle",
       "source": {
         "source": "archive",
-        "url": "https://github.com/jannotix/claude-code-cycle-plugin/releases/download/cycle--v1.1.2/cycle-1.1.2.zip",
-        "sha256": "f075d62fc9e2c70a4294d5912b7c47a795b3f21c2cb248b7b8c92927eb85bd84"
+        "url": "https://github.com/jannotix/claude-code-cycle-plugin/releases/download/cycle--v1.1.3/cycle-1.1.3.zip",
+        "sha256": "bd5520b16bb8f9b34d871d4a7ce70f921e2050880c40013a8fca8620fbfedafc"
       },
       "category": "development",
       "description": "Five separated roles and an arbiter that judges against your original request. A candidate ships only when the gates that prove it actually ran."
