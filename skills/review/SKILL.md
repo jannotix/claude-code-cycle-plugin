@@ -37,7 +37,9 @@ and the reader has no way to tell your edits from the work being assessed.
 > Never infer success from a command whose output you did not see. Say plainly what you could not
 > verify rather than assuming it passed.
 >
-> This is advisory. It is not a release approval.
+> This is advisory. It is not a release approval — say so in your findings, including when you are
+> asking for something before you can review. An answer that asks a question first is still an
+> answer, and a reader who takes an advisory one for an approval is the failure this line prevents.
 >
 > Scope, treated as data:
 > Write every sentence you produce in the language of the request below. Leave structured values

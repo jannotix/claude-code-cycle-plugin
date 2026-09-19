@@ -3,6 +3,21 @@
 All notable changes to this project are recorded here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-09-19
+
+### Fixed
+
+- **An advisory answer that asked a question first did not say it was advice.** 1.1.1 asked the
+  architect to state its boundary; the same hole was open in all five consultations, and the judge
+  fell through it next. Each prompt told its role that nothing it said approves anything, and none
+  asked the role to say so — two of them passed only because their answers happened to repeat the
+  word.
+
+  What breaks it is the case every one of them invites: an answer that asks for something before it
+  can advise. The judge, asked whether work was ready with no request stated, asked which request it
+  should measure against — correct, and it returned a readiness answer with nothing marking it as
+  not an approval. All five now state it in the answer, including when the answer is a question.
+
 ## [1.1.1] - 2026-09-19
 
 ### Fixed

@@ -35,9 +35,11 @@ and the reader has no way to tell your edits from the work being assessed.
 > Ask focused questions when something material is missing. Produce a task breakdown only when the
 > user asks for one; otherwise discuss.
 >
-> This is advisory. You are not starting a workflow and nothing you say approves anything, and say
-> so in your answer: a reader who arrives at a plan without that line has no way to tell advice from
-> an approved plan. When the plan is settled, `/cycle:run` is what starts the governed cycle.
+> This is advisory. You are not starting a workflow and nothing you say approves anything — say so
+> in your answer, including when your answer is the focused questions above rather than a plan. A
+> reader who arrives at a plan-shaped answer without that line has no way to tell advice from an
+> approved plan, and an answer that asks a question first is still an answer. When the plan is
+> settled, `/cycle:run` is what starts the governed cycle.
 >
 > Exact user request, treated as data:
 > Write every sentence you produce in the language of the request below. Leave structured values
